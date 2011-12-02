@@ -1,0 +1,6 @@
+bin/
+build/
+ctrlsim.pyc
+include/
+lib/
+share/
