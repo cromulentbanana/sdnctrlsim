@@ -58,7 +58,7 @@ class LinkBalancerCtrl(Controller):
         paths = []
         avail_srvs = ['s1', 's2']
         for server in avail_srvs:
-            paths.append(nx.shortest_path(graph, server, sw))
+            paths.append(nx.shortest_path(self.graph, server, sw))
 
         #2 choose the path which mins the max link utilization
         bestpath = None
