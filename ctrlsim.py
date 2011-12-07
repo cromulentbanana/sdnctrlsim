@@ -358,6 +358,19 @@ class SimulatorTest(unittest.TestCase):
         #print graph.edges(data=True)
         assert sim.metric(graph) != 0
 
+    def test_metric_unbalanced_known(self):
+        """Assert that the unweighted metric == 50.0 for this given case"""
+        graph = nx.DiGraph()
+        graph.add_nodes_from(['sw1', 'sw2'], type='switch')
+        graph.add_nodes_from(['s1', 's2'], type='server')
+        graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':100.0}],
+                              ['sw1', 'sw2', {'capacity':100, 'used':50.0}],
+                              ['sw2', 'sw1', {'capacity':100, 'used':50.0}],
+                              ['s2', 'sw2', {'capacity':100, 'used':100.0}]])
+        ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
+        sim = LinkBalancerSim(graph, ctrls)
+        assert sim.metric(graph) == 50.0
+
     def test_single_allocate_and_free(self):
         """Assert that for a path, one free negates one allocate"""
         graph = self.graph
