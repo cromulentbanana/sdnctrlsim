@@ -5,6 +5,7 @@
 
 from math import sqrt
 import networkx as nx
+import sys
 from random import choice, randint, random
 import unittest
 
@@ -13,14 +14,18 @@ class Controller(object):
     """
     Generic controller -- does not implement control logic:
     """
-    def __init__(self, sw=[], graph=None):
+    def __init__(self, sw=[], srv=[], graph=None):
+        """
+        sw: list of switch names goverend by this controller
+        srv: list of servers known by this controller
+        to which requests may be dispatched sent
+        graph: full graph data, with capacities and utilization
+        """
         self.switches = sw
+        self.servers = srv
         self.graph = graph
 
     def __str__(self):
-        return "Controller of: " + str(self.switches)
-
-    def __repr__(self):
         return "Controller of: " + str(self.switches)
 
     def get_switches(self):
@@ -36,18 +41,6 @@ class LinkBalancerCtrl(Controller):
     switches, and decides how to map requests such to minimize the maximum link
     utilization over all visible links
     """
-    def __init__(self, sw=[], graph=None):
-        """
-        sw: list of switch names goverend by this controller
-        graph: full graph data, with capacities and utilization
-        """
-        #super(LinkBalancerCtrl, self).__init__()
-        self.switches = sw
-        self.graph = graph
-
-        # calculate subgraph composed only of switches and links known by the
-        # controller
-
     def handle_request(self, sw=None, util=0, duration=0):
         """
         Given a request that utilizes some bandwidth for a duration, map
@@ -56,7 +49,7 @@ class LinkBalancerCtrl(Controller):
         """
         #1 get path list: from entry sw to available servers which can respond
         paths = []
-        avail_srvs = ['s1', 's2']
+        avail_srvs = self.servers
         for server in avail_srvs:
             paths.append(nx.shortest_path(self.graph, server, sw))
 
@@ -80,7 +73,7 @@ class LinkBalancerCtrl(Controller):
                 #print "LinkMetric: " + str(linkmetric)
                 # If we've oversubscribed a link, go to next path
                 if linkmetric > 1:
-                    print "WARNING: OVERSUBSCRIBED"
+                    print >> sys.stderr, "OVERSUBSCRIBED at time " + str(i)
                     next
                 else:
                     linkmetrics.append(linkmetric)
@@ -93,7 +86,8 @@ class LinkBalancerCtrl(Controller):
                 bestpath = path
                 bestpathmetric = pathmetric
 
-        #print self.__str__() + ": " + str(bestpath) + str(linkmetrics)
+        print >> sys.stderr, "DEBUG: " + str(self
+            ) + " choosing best path: " + str(bestpath) + str(linkmetrics)
         return bestpath
 
 
@@ -103,32 +97,43 @@ class Simulation(object):
     the switches, controllers
     """
 
-    def __init__(self, graph=None, ctrls=[], servers=None, switches=None):
+    def __init__(self, graph=None, ctrls=[]):
         """
         graph: topology annotated with capacity and utilization per edge
         ctrls: list of controller objects
         switches: list of switch names
         servers: list of server names
         """
-        self.to_be_freed = {}
+        self.active_flows = {}
         self.graph = graph
         for u, v in self.graph.edges():
+            # Initialize edge utilization attribute values in graph
             self.graph[u][v].setdefault("used", 0.0)
 
         # reqs: list req tuples, each (input, duration, util)
         self.reqs = {}
         self.sw_to_ctrl = {}
-        self.servers = servers
-        self.ctrls = ctrls
+
+        # Extract switches and server nodes from graph
+        self.switches = []
+        self.servers = []
+        for node, attrdict in self.graph.nodes(data=True):
+            if attrdict.get('type') == 'switch':
+                self.switches.append(node)
+            elif attrdict.get('type') == 'server':
+                self.servers.append(node)
 
         # Map each switch to its unique controller
+        self.ctrls = ctrls
         for ctrl in self.ctrls:
             for switch in ctrl.get_switches():
                 assert (not switch in self.sw_to_ctrl)
                 self.sw_to_ctrl[switch] = ctrl
 
+        self.switches = self.sw_to_ctrl.keys()
+
     def __str__(self):
-        return "simulation: " + str([repr(c) for c in self.ctrls])
+        return "Simulation: " + str([str(c) for c in self.ctrls])
 
     def metric(self):
         """ Stub Calculated our performance by chosen metric """
@@ -140,7 +145,45 @@ class LinkBalancerSim(Simulation):
     Simulation in which each controller balances link utilization according to
     its view of available links
     """
+
     def metric(self, graph=None):
+        return self.metric_unweighted(graph)
+
+    def metric_unweighted(self, graph=None):
+        """ Calculated RMSE"""
+        # Compute ideal used fraction of each server's outgoing link, assuming
+        # perfect split between them (regardless of discrete demands with
+        # bin-packing constraints.
+
+        if not (graph):
+            graph = self.graph
+
+        # First, find total capacity and util of entire network
+        used_total = 0.0
+        cap_total = 0.0
+        pairs = []
+        for src, dst, attrs in self.graph.edges(data=True):
+            assert 'capacity' in attrs and 'used' in attrs
+            cap = attrs['capacity']
+            used = attrs['used']
+            pairs.append((cap, used))
+            cap_total += cap
+            used_total += used
+
+#        print "DEBUG: cap total: " + str(cap_total)
+#        print "DEBUG: used total: " + str(used_total)
+#        print "DEBUG: pairs: " + str(pairs)
+        values = []  # values to be used in metric computation
+        for pair in pairs:
+            capacity, used = pair
+            opt_used = (used_total / cap_total) * capacity
+            # Use the absolute difference
+            # Not scaled by capacity.
+            values.append(abs(used - opt_used) ** 2)
+
+        return sqrt(sum(values))
+
+    def metric_brandon(self, graph=None):
         """ Calculated RMSE"""
         # Compute ideal used fraction of each server's outgoing link, assuming
         # perfect split between them (regardless of discrete demands with
@@ -198,22 +241,27 @@ class LinkBalancerSim(Simulation):
             edge = self.graph.edge[src][dst]
             edge['used'] += resources
 
-        self.to_be_freed.setdefault(whenfree, []).append((path, resources))
+        self.active_flows.setdefault(whenfree, []).append((path, resources))
+        #print self.graph.edges(data=True)
+#        print >> sys.stderr, "DEBUG: Allocated " + str(resources
+#            ) + " to " + str(path)
 
     def free_resources(self, timestep):
         """
         Free (put back) resouces along path for each link
         Scales with number of simultaneous links
         """
-        if timestep in self.to_be_freed:
-            for ending_flow in self.to_be_freed[timestep]:
+        if timestep in self.active_flows:
+            for ending_flow in self.active_flows[timestep]:
                 path, resources = ending_flow
                 links = zip(path[:-1], path[1:])
                 for src, dst in links:
                     used = self.graph.edge[src][dst]['used']
                     self.graph.edge[src][dst]['used'] -= resources
-            # Allow garbage collection on the list of paths for this timestep
-            self.to_be_freed.pop(timestep)
+#                print >> sys.stderr, "DEBUG: Freed " + str(resources
+#                    ) + " to " + str(path)
+            # Allow grbg collection on the list of paths for this timestep
+            self.active_flows.pop(timestep)
         else:
             pass
 
@@ -254,36 +302,70 @@ class LinkBalancerSim(Simulation):
             # Compute metric(s) for this timestep
             metric_val = self.metric()
             metrics.append(metric_val)
-            #print "TIMESTEP: %i, metric: %s" % (i, metric_val)
+            #print >> sys.stderr, "DEBUG: time %i, metric %s" % (i, metric_val)
 
         return metrics
 
 ###############################################################################
 
-# Define graph with capacities
-graph = nx.DiGraph()
-graph.add_nodes_from(['sw1', 'sw2', 's1', 's2'])
-graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
-                      ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
-                      ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
-                      ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
-TIMESTEPS = 10
-SWITCHES = ['sw1', 'sw2']
-SERVERS = ['s1', 's2']
 
-
-class TestSimulator(unittest.TestCase):
+class SimulatorTest(unittest.TestCase):
     """Unit tests for LinkBalancerSim class"""
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
+    graph.add_nodes_from(['s1', 's2'], type='server')
+    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
+                          ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
+
+    def test_metric_empty(self):
+        """Assert that the metric == 0 with all links 0% used"""
+        graph = self.graph
+        ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
+        sim = LinkBalancerSim(graph, ctrls)
+        assert sim.metric(graph) == 0
+
+    def test_metric_half(self):
+        """Assert that the metric == 0 with all links 50% used"""
+        graph = self.graph
+        ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
+        sim = LinkBalancerSim(graph, ctrls)
+        for u, v in graph.edges():
+            graph[u][v]["used"] = 0.5 * graph[u][v]["capacity"]
+        #print graph.edges(data=True)
+        assert sim.metric(graph) == 0
+
+    def test_metric_full(self):
+        """Assert that the metric == 0 with all links 100% used"""
+        graph = self.graph
+        ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
+        sim = LinkBalancerSim(graph, ctrls)
+        for u, v in graph.edges():
+            graph[u][v]["used"] = graph[u][v]["capacity"]
+        #print graph.edges(data=True)
+        assert sim.metric(graph) == 0
+
+    def test_metric_unbalanced(self):
+        """Assert that the metric != 0 with links of differing utils"""
+        graph = self.graph
+        ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
+        sim = LinkBalancerSim(graph, ctrls)
+        increasingvalue = 0
+        for u, v in graph.edges():
+            graph[u][v]["used"] = increasingvalue
+            increasingvalue += 1
+        #print graph.edges(data=True)
+        assert sim.metric(graph) != 0
 
     def test_single_allocate_and_free(self):
-        """Check that resources consumed by one are allocated and freed"""
-
-        ctrls = []
-        c = LinkBalancerCtrl(['sw1'], graph)
-        ctrls.append(c)
-        sim = LinkBalancerSim(graph, ctrls, SERVERS, SWITCHES)
+        """Assert that for a path, one free negates one allocate"""
+        graph = self.graph
+        ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
+        sim = LinkBalancerSim(graph, ctrls)
         metric_before_alloc = sim.metric(graph)
         path = nx.shortest_path(graph, 's1', 'sw1')
+
         sim.allocate_resouces(path, 40, 'some_time')
         metric_after_alloc = sim.metric(graph)
         sim.free_resources('some_time')
@@ -291,21 +373,23 @@ class TestSimulator(unittest.TestCase):
 
         assert metric_before_alloc == metric_after_free
         assert metric_before_alloc != metric_after_alloc
-        assert len(sim.to_be_freed.keys()) == 0
+        assert len(sim.active_flows.keys()) == 0
 
     def test_multi_allocate_and_free(self):
-        """Resources consumed by flows must be freed"""
-
+        """Assert that resources allocated by flows are freed"""
+        SWITCHES = ['sw1', 'sw2']
+        SERVERS = ['s1', 's2']
+        graph = self.graph
         max_duration = 10
         durations = range(1, max_duration)
-        timesteps = 100
+        steps = 100
         a = nx.shortest_path(graph, choice(SERVERS), choice(SWITCHES))
         b = nx.shortest_path(graph, choice(SERVERS), choice(SWITCHES))
         paths = [a, b]
-        workload = [(choice(paths), choice(durations)) for t in range(timesteps)]
+        workload = [(choice(paths), choice(durations)) for t in range(steps)]
 
         ctrls = [LinkBalancerCtrl(['sw1', 'sw2'], graph)]
-        sim = LinkBalancerSim(graph, ctrls, SERVERS, SWITCHES)
+        sim = LinkBalancerSim(graph, ctrls)
 
         metric_before_alloc = sim.metric(graph)
 
@@ -315,34 +399,42 @@ class TestSimulator(unittest.TestCase):
             sim.allocate_resouces(path, 1, now + dur)
 
         # Free the (up to max_duration) possibly remaining live flows
-        for i in range(len(workload), timesteps + max_duration):
+        for i in range(len(workload), steps + max_duration):
             sim.free_resources(i)
 
         metric_after_free = sim.metric(graph)
 
         assert metric_before_alloc == metric_after_free
-        assert len(sim.to_be_freed.keys()) == 0
+        assert len(sim.active_flows.keys()) == 0
+
+###############################################################################
 
 
 class TestTwoSwitch(unittest.TestCase):
     """Unit tests for two-switch simulation scenario"""
 
-    @staticmethod
-    def two_ctrls():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
+    graph.add_nodes_from(['s1', 's2'], type='server')
+    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
+                          ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
+
+    def two_ctrls(self):
         """Return controller list with two different controllers."""
+        graph = self.graph
         ctrls = []
-        c1 = LinkBalancerCtrl(['sw1'], graph)
-        c2 = LinkBalancerCtrl(['sw2'], graph)
+        c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'], graph=graph)
+        c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'], graph=graph)
         ctrls.append(c1)
         ctrls.append(c2)
         return ctrls
 
-#TODO: Ensure that the workload imparts an imbalance to the system which the
-#sync can resolve. Otherwise sync rate will not reveal any meaningful
-#relationship to system optimality.
     @staticmethod
     def unit_workload(switches, size, duration, timesteps):
-        """Return workload description with unit demands and unit length.
+        """
+        Return workload description with unit demands and unit length.
 
         switches: list of switch names
         size: data demand (unitless)
@@ -355,41 +447,53 @@ class TestTwoSwitch(unittest.TestCase):
             #   (switch, size, duration)
         """
         workload = []
-#        eventually:
-#        minutil = 10
-#        maxutil = 10
-#        mindur = 1
-#        maxdur = 1
         for t in range(timesteps):
             requests = [(sw, size, duration) for sw in switches]
-#           requests = [(choice(sw),randint(minutil,maxutil),
-#                         randint(mindur,maxdur)) for sw in switches]
             workload.append(requests)
         return workload
-###############################################################################
 
-#TODO Brandon: the below tests assert incorrect outcomes based on our inputs
+    @staticmethod
+    def random_workload(switches, size, duration, timesteps):
+        """
+        Return workload description with unit demands and unit length.
+        """
+        workload = []
+        minutil = 10
+        maxutil = 10
+        mindur = 1
+        maxdur = 1
+        for t in range(timesteps):
+            requests = [(choice(sw), randint(minutil, maxutil),
+                         randint(mindur, maxdur)) for sw in switches]
+            workload.append(requests)
+        return workload
 
-#    def test_one_switch_unit_reqs(self):
-#        """For equal unit reqs and one switch, ensure that RMSE == 0."""
-#
-#        workload = self.unit_workload(switches=SWITCHES, size=1,
-#                                      duration=1, timesteps=TIMESTEPS)
-#        ctrls = []
-#        c = LinkBalancerCtrl(['sw1', 'sw2'], graph)
-#        ctrls.append(c)
-#        sim = LinkBalancerSim(graph, ctrls, SERVERS, SWITCHES)
-#        metrics = sim.run(workload)
-#        print metrics
-#        for metric_val in metrics:
-#            assert metric_val == 0
-#
+    def test_one_switch_unit_reqs(self):
+        """For equal unit reqs and one switch, ensure that RMSE == 0."""
+
+        graph2 = nx.DiGraph()
+        graph2.add_nodes_from(['sw1'], type='switch')
+        graph2.add_nodes_from(['s1', 's2'], type='server')
+        graph2.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
+                              ['s2', 'sw1', {'capacity':100, 'used':0.0}]])
+
+        workload = self.unit_workload(switches=2 * ['sw1'], size=1,
+                                      duration=2, timesteps=10)
+
+        ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'], graph=graph2)]
+        sim = LinkBalancerSim(graph2, ctrls)
+        metrics = sim.run(workload)
+        #print metrics
+        for metric_val in metrics:
+            assert metric_val == 0
+
+    #TODO Brandon: below tests assert incorrect outcomes based on our inputs
 #    def test_two_ctrl_single_step(self):
 #        """A single-step simulation run should have zero RMSE."""
-#        workload = self.unit_workload(switches=SWITCHES, size=1,
+#        workload = self.unit_workload(switches=['sw1' ,'sw2'], size=1,
 #                                 duration=2, timesteps=1)
 #        ctrls = self.two_ctrls()
-#        sim = LinkBalancerSim(graph, ctrls, SERVERS, SWITCHES)
+#        sim = LinkBalancerSim(self.graph, ctrls)
 #        metrics = sim.run(workload)
 #        print metrics
 #        assert metrics[0] == 0.0
@@ -399,7 +503,7 @@ class TestTwoSwitch(unittest.TestCase):
 #        workload = self.unit_workload(switches=SWITCHES, size=1,
 #                                 duration=2, timesteps=TIMESTEPS)
 #        ctrls = self.two_ctrls()
-#        sim = LinkBalancerSim(graph, ctrls, SERVERS, SWITCHES)
+#        sim = LinkBalancerSim(graph, ctrls)
 #        metrics = sim.run(workload)
 #        print metrics
 #        for metric_val in metrics:
