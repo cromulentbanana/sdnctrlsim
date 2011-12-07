@@ -16,7 +16,7 @@ class Controller(object):
     """
     def __init__(self, sw=[], srv=[], graph=None):
         """
-        sw: list of switch names goverend by this controller
+        sw: list of switch names governed by this controller
         srv: list of servers known by this controller
         to which requests may be dispatched sent
         graph: full graph data, with capacities and utilization
@@ -150,10 +150,10 @@ class LinkBalancerSim(Simulation):
         return self.metric_unweighted(graph)
 
     def metric_unweighted(self, graph=None):
-        """ Calculated RMSE"""
+        """Calculate RMSE over all links"""
         # Compute ideal used fraction of each server's outgoing link, assuming
         # perfect split between them (regardless of discrete demands with
-        # bin-packing constraints.
+        # bin-packing constraints).
 
         if not (graph):
             graph = self.graph
@@ -184,10 +184,10 @@ class LinkBalancerSim(Simulation):
         return sqrt(sum(values))
 
     def metric_brandon(self, graph=None):
-        """ Calculated RMSE"""
+        """Calculate RMSE over server links"""
         # Compute ideal used fraction of each server's outgoing link, assuming
         # perfect split between them (regardless of discrete demands with
-        # bin-packing constraints.
+        # bin-packing constraints).
 
         if not (graph):
             graph = self.graph
@@ -223,11 +223,11 @@ class LinkBalancerSim(Simulation):
 
         return sqrt(sum(values))
 
-    def allocate_resouces(self, path=[], resources=0, whenfree=0):
+    def allocate_resources(self, path=[], resources=0, whenfree=0):
         """
-        Subtract resouces along path for each link (add to self.used[src][dst])
+        Subtract resources along path for each link (add to self.used[src][dst])
         Detect if any link in a path is fully utilized, do not oversubscribe
-        Record the resouces for link to be freed at time <whenfree>
+        Record the resources for link to be freed at time <whenfree>
         """
         if not (path):
             return
@@ -248,7 +248,7 @@ class LinkBalancerSim(Simulation):
 
     def free_resources(self, timestep):
         """
-        Free (put back) resouces along path for each link
+        Free (put back) resources along path for each link
         Scales with number of simultaneous links
         """
         if timestep in self.active_flows:
@@ -293,7 +293,7 @@ class LinkBalancerSim(Simulation):
                 assert (isinstance(duration, int) and duration > 0)
                 ctrl = self.sw_to_ctrl[sw]
                 path = ctrl.handle_request(sw, size, duration)
-                self.allocate_resouces(path, size, duration + i)
+                self.allocate_resources(path, size, duration + i)
 
             # TODO: add back sync_probability
             #if (sync_probability):
@@ -362,7 +362,7 @@ class SimulatorTest(unittest.TestCase):
         metric_before_alloc = sim.metric(graph)
         path = nx.shortest_path(graph, 's1', 'sw1')
 
-        sim.allocate_resouces(path, 40, 'some_time')
+        sim.allocate_resources(path, 40, 'some_time')
         metric_after_alloc = sim.metric(graph)
         sim.free_resources('some_time')
         metric_after_free = sim.metric(graph)
@@ -392,7 +392,7 @@ class SimulatorTest(unittest.TestCase):
         for now, item in enumerate(workload):
             path, dur = item
             sim.free_resources(now)
-            sim.allocate_resouces(path, 1, now + dur)
+            sim.allocate_resources(path, 1, now + dur)
 
         # Free the (up to max_duration) possibly remaining live flows
         for i in range(len(workload), steps + max_duration):
