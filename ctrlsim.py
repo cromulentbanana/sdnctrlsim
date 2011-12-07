@@ -319,32 +319,15 @@ class SimulatorTest(unittest.TestCase):
                           ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
                           ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
 
-    def test_metric_empty(self):
-        """Assert that the metric == 0 with all links 0% used"""
+    def test_zero_metric(self):
+        """Assert that RMSE metric == 0 for varying link utils"""
         graph = self.graph
         ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
         sim = LinkBalancerSim(graph, ctrls)
-        assert sim.metric(graph) == 0
-
-    def test_metric_half(self):
-        """Assert that the metric == 0 with all links 50% used"""
-        graph = self.graph
-        ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
-        sim = LinkBalancerSim(graph, ctrls)
-        for u, v in graph.edges():
-            graph[u][v]["used"] = 0.5 * graph[u][v]["capacity"]
-        #print graph.edges(data=True)
-        assert sim.metric(graph) == 0
-
-    def test_metric_full(self):
-        """Assert that the metric == 0 with all links 100% used"""
-        graph = self.graph
-        ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
-        sim = LinkBalancerSim(graph, ctrls)
-        for u, v in graph.edges():
-            graph[u][v]["used"] = graph[u][v]["capacity"]
-        #print graph.edges(data=True)
-        assert sim.metric(graph) == 0
+        for util in [0.0, 0.5, 1.0]:
+            for u, v in graph.edges():
+                graph[u][v]["used"] = util * graph[u][v]["capacity"]
+            self.assertEqual(sim.metric(graph), 0.0)
 
     def test_metric_unbalanced(self):
         """Assert that the metric != 0 with links of differing utils"""
