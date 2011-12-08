@@ -406,6 +406,43 @@ class SimulatorTest(unittest.TestCase):
 ###############################################################################
 
 
+def unit_workload(switches, size, duration, timesteps):
+    """
+    Return workload description with unit demands and unit length.
+
+    switches: list of switch names
+    size: data demand (unitless)
+    duration: length of each request (unitless)
+    timesteps: number of timesteps
+    returns: workload structure
+        # Workload is a list of lists.
+        # Each top-level list element corresponds to one time step.
+        # Each second-level list element is a tuple of:
+        #   (switch, size, duration)
+    """
+    workload = []
+    for t in range(timesteps):
+        requests = [(sw, size, duration) for sw in switches]
+        workload.append(requests)
+    return workload
+
+
+def random_workload(switches, size, duration, timesteps):
+    """
+    Return workload description with unit demands and unit length.
+    """
+    workload = []
+    minutil = 10
+    maxutil = 10
+    mindur = 1
+    maxdur = 1
+    for t in range(timesteps):
+        requests = [(choice(sw), randint(minutil, maxutil),
+                     randint(mindur, maxdur)) for sw in switches]
+        workload.append(requests)
+    return workload
+
+
 class TestTwoSwitch(unittest.TestCase):
     """Unit tests for two-switch simulation scenario"""
 
@@ -427,43 +464,6 @@ class TestTwoSwitch(unittest.TestCase):
         ctrls.append(c2)
         return ctrls
 
-    @staticmethod
-    def unit_workload(switches, size, duration, timesteps):
-        """
-        Return workload description with unit demands and unit length.
-
-        switches: list of switch names
-        size: data demand (unitless)
-        duration: length of each request (unitless)
-        timesteps: number of timesteps
-        returns: workload structure
-            # Workload is a list of lists.
-            # Each top-level list element corresponds to one time step.
-            # Each second-level list element is a tuple of:
-            #   (switch, size, duration)
-        """
-        workload = []
-        for t in range(timesteps):
-            requests = [(sw, size, duration) for sw in switches]
-            workload.append(requests)
-        return workload
-
-    @staticmethod
-    def random_workload(switches, size, duration, timesteps):
-        """
-        Return workload description with unit demands and unit length.
-        """
-        workload = []
-        minutil = 10
-        maxutil = 10
-        mindur = 1
-        maxdur = 1
-        for t in range(timesteps):
-            requests = [(choice(sw), randint(minutil, maxutil),
-                         randint(mindur, maxdur)) for sw in switches]
-            workload.append(requests)
-        return workload
-
     def test_one_switch_unit_reqs(self):
         """For equal unit reqs and one switch, ensure that RMSE == 0."""
 
@@ -473,8 +473,8 @@ class TestTwoSwitch(unittest.TestCase):
         graph2.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
                               ['s2', 'sw1', {'capacity':100, 'used':0.0}]])
 
-        workload = self.unit_workload(switches=2 * ['sw1'], size=1,
-                                      duration=2, timesteps=10)
+        workload = unit_workload(switches=2 * ['sw1'], size=1,
+                                 duration=2, timesteps=10)
 
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'], graph=graph2)]
         sim = LinkBalancerSim(graph2, ctrls)
