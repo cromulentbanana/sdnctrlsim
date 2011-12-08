@@ -145,24 +145,31 @@ class LinkBalancerSim(Simulation):
     Simulation in which each controller balances link utilization according to
     its view of available links
     """
+    def __init__(self, *args, **kwargs):
+        super(LinkBalancerSim, self).__init__(*args, **kwargs)
+        self.metric_fcns = [self.rmse_links, self.rmse_servers]
 
-    def metric(self, graph=None):
-        return self.metric_unweighted(graph)
+    def metrics(self, graph=None):
+        """Return dict of metric names to values"""
+        m = {}
+        for fcn in self.metric_fcns():
+            m[fcn.__name__] = fcn(self, graph)
+        return m
 
-    def metric_unweighted(self, graph=None):
-        """Calculate RMSE over all links"""
-        # Compute ideal used fraction of each server's outgoing link, assuming
+    def rmse_links(self, graph=None):
+        """Calculate RMSE over _all_ links"""
+        # Compute ideal used fraction over all links, assuming
         # perfect split between them (regardless of discrete demands with
         # bin-packing constraints).
 
-        if not (graph):
+        if not graph:
             graph = self.graph
 
         # First, find total capacity and util of entire network
         used_total = 0.0
         cap_total = 0.0
         pairs = []
-        for src, dst, attrs in self.graph.edges(data=True):
+        for src, dst, attrs in graph.edges(data=True):
             assert 'capacity' in attrs and 'used' in attrs
             cap = attrs['capacity']
             used = attrs['used']
@@ -183,24 +190,18 @@ class LinkBalancerSim(Simulation):
 
         return sqrt(sum(values))
 
-    def metric_brandon(self, graph=None):
-        """Calculate RMSE over server links"""
+    def rmse_servers(self, graph=None):
+        """Calculate RMSE over server outgoing links"""
         # Compute ideal used fraction of each server's outgoing link, assuming
         # perfect split between them (regardless of discrete demands with
         # bin-packing constraints).
-
-        if not (graph):
+        if not graph:
             graph = self.graph
 
-        # First, find total util of all requests
-        used_total = 0.0
-        for req in self.reqs:
-            input, used, duration = req
-            used_total += used
-
         # Assuming a proportional spread of those requests, find optimal.
-        pairs = []  # list of (capacity, used) pairs
         cap_total = 0.0  # total capacity of all server links
+        used_total = 0.0
+        pairs = []  # list of (capacity, used) pairs
         for s in self.servers:
             neighbor_sw = graph.neighbors(s)
             if len(neighbor_sw) != 1:
@@ -212,6 +213,7 @@ class LinkBalancerSim(Simulation):
                 used = graph[src][dst]["used"]
                 pairs.append((capacity, used))
                 cap_total += capacity
+                used_total += used
 
         values = []  # values to be used in metric computation
         for pair in pairs:
@@ -281,9 +283,13 @@ class LinkBalancerSim(Simulation):
             Each top-level list element corresponds to one time step.
             Each second-level list element is a tuple of:
               (switch of arrival, utilization, duration)
-        returns: list of metric values for each timestep
+        returns: dict of metric names to value list (one entry per timestep)
         """
-        metrics = []  # list of metric values for each timestep
+        # dict mapping metric function names to lists;
+        # each list covers the metric values for each timestep
+        all_metrics = {}
+        for fcn in self.metric_fcns:
+            all_metrics[fcn.__name__] = []
         for i, reqs in enumerate(workload):
             # Free link resources from flows that terminate at this timestep
             self.free_resources(i)
@@ -300,11 +306,11 @@ class LinkBalancerSim(Simulation):
             #    self.sync_ctrls(self.ctrls)
 
             # Compute metric(s) for this timestep
-            metric_val = self.metric()
-            metrics.append(metric_val)
+            for fcn in self.metric_fcns:
+                all_metrics[fcn.__name__].append(fcn(self.graph))
             #print >> sys.stderr, "DEBUG: time %i, metric %s" % (i, metric_val)
 
-        return metrics
+        return all_metrics
 
 ###############################################################################
 
@@ -327,7 +333,7 @@ class SimulatorTest(unittest.TestCase):
         for util in [0.0, 0.5, 1.0]:
             for u, v in graph.edges():
                 graph[u][v]["used"] = util * graph[u][v]["capacity"]
-            self.assertEqual(sim.metric(graph), 0.0)
+            self.assertEqual(sim.rmse_links(graph), 0.0)
 
     def test_metric_unbalanced(self):
         """Assert that the metric != 0 with links of differing utils"""
@@ -339,7 +345,7 @@ class SimulatorTest(unittest.TestCase):
             graph[u][v]["used"] = increasingvalue
             increasingvalue += 1
         #print graph.edges(data=True)
-        assert sim.metric(graph) != 0
+        self.assertNotEqual(sim.rmse_links(graph), 0)
 
     def test_metric_unbalanced_known(self):
         """Assert that the unweighted metric == 50.0 for this given case"""
@@ -352,24 +358,24 @@ class SimulatorTest(unittest.TestCase):
                               ['s2', 'sw2', {'capacity':100, 'used':100.0}]])
         ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
         sim = LinkBalancerSim(graph, ctrls)
-        assert sim.metric(graph) == 50.0
+        self.assertEqual(sim.rmse_links(graph), 50.0)
 
     def test_single_allocate_and_free(self):
         """Assert that for a path, one free negates one allocate"""
         graph = self.graph
         ctrls = [LinkBalancerCtrl(['sw1'], ['s1', 's2'], graph)]
         sim = LinkBalancerSim(graph, ctrls)
-        metric_before_alloc = sim.metric(graph)
+        metric_before_alloc = sim.rmse_links(graph)
         path = nx.shortest_path(graph, 's1', 'sw1')
 
         sim.allocate_resources(path, 40, 'some_time')
-        metric_after_alloc = sim.metric(graph)
+        metric_after_alloc = sim.rmse_links(graph)
         sim.free_resources('some_time')
-        metric_after_free = sim.metric(graph)
+        metric_after_free = sim.rmse_links(graph)
 
-        assert metric_before_alloc == metric_after_free
-        assert metric_before_alloc != metric_after_alloc
-        assert len(sim.active_flows.keys()) == 0
+        self.assertEqual(metric_before_alloc, metric_after_free)
+        self.assertNotEqual(metric_before_alloc, metric_after_alloc)
+        self.assertEqual(len(sim.active_flows.keys()), 0)
 
     def test_multi_allocate_and_free(self):
         """Assert that resources allocated by flows are freed"""
@@ -387,7 +393,7 @@ class SimulatorTest(unittest.TestCase):
         ctrls = [LinkBalancerCtrl(['sw1', 'sw2'], graph)]
         sim = LinkBalancerSim(graph, ctrls)
 
-        metric_before_alloc = sim.metric(graph)
+        metric_before_alloc = sim.rmse_links(graph)
 
         for now, item in enumerate(workload):
             path, dur = item
@@ -398,10 +404,10 @@ class SimulatorTest(unittest.TestCase):
         for i in range(len(workload), steps + max_duration):
             sim.free_resources(i)
 
-        metric_after_free = sim.metric(graph)
+        metric_after_free = sim.rmse_links(graph)
 
-        assert metric_before_alloc == metric_after_free
-        assert len(sim.active_flows.keys()) == 0
+        self.assertEqual(metric_before_alloc, metric_after_free)
+        self.assertEqual(len(sim.active_flows.keys()), 0)
 
 ###############################################################################
 
@@ -453,6 +459,8 @@ class TestTwoSwitch(unittest.TestCase):
                           ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
                           ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
                           ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
+    SWITCHES = ['sw1', 'sw2']
+    TIMESTEPS = 10
 
     def two_ctrls(self):
         """Return controller list with two different controllers."""
@@ -480,30 +488,29 @@ class TestTwoSwitch(unittest.TestCase):
         sim = LinkBalancerSim(graph2, ctrls)
         metrics = sim.run(workload)
         #print metrics
-        for metric_val in metrics:
-            assert metric_val == 0
+        for metric_val in metrics['rmse_links']:
+            self.assertEqual(metric_val, 0)
 
-    #TODO Brandon: below tests assert incorrect outcomes based on our inputs
-#    def test_two_ctrl_single_step(self):
-#        """A single-step simulation run should have zero RMSE."""
-#        workload = self.unit_workload(switches=['sw1' ,'sw2'], size=1,
-#                                 duration=2, timesteps=1)
-#        ctrls = self.two_ctrls()
-#        sim = LinkBalancerSim(self.graph, ctrls)
-#        metrics = sim.run(workload)
-#        print metrics
-#        assert metrics[0] == 0.0
-#
-#    def test_two_ctrl_unit_reqs(self):
-#        """For equal unit reqs and two controllers, ensure that RMSE == 0."""
-#        workload = self.unit_workload(switches=SWITCHES, size=1,
-#                                 duration=2, timesteps=TIMESTEPS)
-#        ctrls = self.two_ctrls()
-#        sim = LinkBalancerSim(graph, ctrls)
-#        metrics = sim.run(workload)
-#        print metrics
-#        for metric_val in metrics:
-#            assert metric_val == 0.0
+    def test_two_ctrl_single_step(self):
+        """A single-step simulation run should have zero RMSE."""
+        workload = unit_workload(switches=['sw1' ,'sw2'], size=1,
+                                 duration=2, timesteps=1)
+        ctrls = self.two_ctrls()
+        sim = LinkBalancerSim(self.graph, ctrls)
+        metrics = sim.run(workload)
+        #print metrics
+        self.assertEqual(metrics['rmse_servers'][0], 0.0)
+
+    def test_two_ctrl_unit_reqs(self):
+        """For equal unit reqs and two controllers, ensure server RMSE == 0."""
+        workload = unit_workload(switches=self.SWITCHES, size=1,
+                                 duration=2, timesteps=self.TIMESTEPS)
+        ctrls = self.two_ctrls()
+        sim = LinkBalancerSim(self.graph, ctrls)
+        metrics = sim.run(workload)
+        #print metrics
+        for metric_val in metrics['rmse_servers']:
+            self.assertEqual(metric_val, 0.0)
 
 
 if __name__ == '__main__':
