@@ -86,8 +86,8 @@ class LinkBalancerCtrl(Controller):
                 bestpath = path
                 bestpathmetric = pathmetric
 
-        print >> sys.stderr, "DEBUG: " + str(self
-            ) + " choosing best path: " + str(bestpath) + str(linkmetrics)
+        #print >> sys.stderr, "DEBUG: " + str(self
+        #    ) + " choosing best path: " + str(bestpath) + str(linkmetrics)
         return bestpath
 
 
