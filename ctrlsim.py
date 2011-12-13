@@ -491,10 +491,11 @@ class TestTwoSwitch(unittest.TestCase):
         """For in-phase sawtooth with 2 ctrls, ensure server RMSE == 0."""
         period = 10
         for max_demand in [2, 4, 8, 10]:
-            workload = dual_sawtooth_workload(switches=self.SWITCHES,
-                                              period=period, offset=0,
-                                              max_demand=max_demand, size=1,
-                                              duration=1, timesteps=2*period)
+            workload = dual_offset_workload(switches=self.SWITCHES,
+                                            period=period, offset=0,
+                                            max_demand=max_demand, size=1,
+                                            duration=1, timesteps=2*period,
+                                            workload_fcn=sawtooth)
             ctrls = self.two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             metrics = sim.run(workload)
@@ -508,16 +509,55 @@ class TestTwoSwitch(unittest.TestCase):
         """
         max_demand = 5
         for period in [4, 5, 10]:
-            workload = dual_sawtooth_workload(switches=self.SWITCHES,
-                                              period=period, offset=period/2.0,
-                                              max_demand=max_demand, size=1,
-                                              duration=1, timesteps=period)
+            workload = dual_offset_workload(switches=self.SWITCHES,
+                                            period=period, offset=period/2.0,
+                                            max_demand=max_demand, size=1,
+                                            duration=1, timesteps=period,
+                                            workload_fcn=sawtooth)
             ctrls = self.two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             metrics = sim.run(workload)
             self.assertEqual(len(metrics['rmse_servers']), period)
             for i, metric_val in enumerate(metrics['rmse_servers']):
                 # When aligned with a sawtooth crossing, RMSE should be equal.
+                if i % (period / 2.0) == period / 4.0:
+                    self.assertAlmostEqual(metric_val, 0.0)
+                else:
+                    self.assertTrue(metric_val > 0.0)
+
+    def test_two_ctrl_wave_inphase(self):
+        """For in-phase wave with 2 ctrls, ensure server RMSE == 0."""
+        period = 10
+        for max_demand in [2, 4, 8, 10]:
+            workload = dual_offset_workload(switches=self.SWITCHES,
+                                            period=period, offset=0,
+                                            max_demand=max_demand, size=1,
+                                            duration=1, timesteps=2*period,
+                                            workload_fcn=wave)
+            ctrls = self.two_ctrls()
+            sim = LinkBalancerSim(two_switch_topo(), ctrls)
+            metrics = sim.run(workload)
+            for metric_val in metrics['rmse_servers']:
+                self.assertAlmostEqual(metric_val, 0.0)
+
+    def test_two_ctrl_wave_outofphase(self):
+        """For out-of-phase wave with 2 ctrls, verify server RMSE.
+
+        Server RMSE = zero when waves cross, non-zero otherwise.
+        """
+        max_demand = 5
+        for period in [4, 5, 10]:
+            workload = dual_offset_workload(switches=self.SWITCHES,
+                                            period=period, offset=period/2.0,
+                                            max_demand=max_demand, size=1,
+                                            duration=1, timesteps=period,
+                                            workload_fcn=wave)
+            ctrls = self.two_ctrls()
+            sim = LinkBalancerSim(two_switch_topo(), ctrls)
+            metrics = sim.run(workload)
+            self.assertEqual(len(metrics['rmse_servers']), period)
+            for i, metric_val in enumerate(metrics['rmse_servers']):
+                # When aligned with a wave crossing, RMSE should be equal.
                 if i % (period / 2.0) == period / 4.0:
                     self.assertAlmostEqual(metric_val, 0.0)
                 else:

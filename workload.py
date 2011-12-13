@@ -3,7 +3,7 @@
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 # Brandon Heller <brandonh@stanford.edu>
 
-from math import floor
+from math import floor, pi, sin
 from random import choice, randint, random
 import unittest
 
@@ -94,8 +94,23 @@ def sawtooth(t, period, offset, max_demand):
         return (period - phase) / float(period / 2.0) * max_demand
 
 
-def dual_sawtooth_workload(switches, period, offset, max_demand, size,
-                           duration, timesteps):
+def wave(t, period, offset, max_demand):
+    """Wave: 0 to full to 0 with specified period
+
+    This is actually an inverted cosine, but staying consistent
+    w/sawtooth seems like the better option.  Shifting left by period / 4 is
+    equal to an inverted cosine.
+
+    Offset is in the same units as period.
+    """
+    phase_unitless = (t + offset - (period / 4.0)) % float(period)
+    phase_radians = phase_unitless / float(period) * (2.0 * pi)
+    raw_val = (sin(phase_radians) + 1.0) / 2.0
+    return raw_val * max_demand
+
+
+def dual_offset_workload(switches, period, offset, max_demand, size,
+                        duration, timesteps, workload_fcn):
     """
     Return workload description with offset sawtooths.
 
@@ -106,6 +121,8 @@ def dual_sawtooth_workload(switches, period, offset, max_demand, size,
     size: data demand (unitless)
     duration: length of each request (unitless)
     timesteps: number of timesteps
+    workload_fcn: fcn like sawtooth or wave, w/these args:
+        (t, period, offset, max_demand)
     returns: workload structure
         # Workload is a list of lists.
         # Each top-level list element corresponds to one time step.
@@ -114,10 +131,20 @@ def dual_sawtooth_workload(switches, period, offset, max_demand, size,
     """
     assert len(switches) == 2
     switch_workload_fcns = {
-        switches[0]: lambda t: sawtooth(t, period, 0, max_demand),
-        switches[1]: lambda t: sawtooth(t, period, offset, max_demand)
+        switches[0]: lambda t: workload_fcn(t, period, 0, max_demand),
+        switches[1]: lambda t: workload_fcn(t, period, offset, max_demand)
     }
     return generic_workload(switch_workload_fcns, size, duration, timesteps)
+
+
+def assertListsAlmostEqual(test, one, two):
+    """Check that lists w/floating-point values are about equal.
+
+    test: instance of unittest.TestCase
+    """
+    test.assertEqual(len(one), len(two))
+    for i in range(len(one)):
+        test.assertAlmostEqual(one[i], two[i])
 
 
 class TestSawtoothWorkload(unittest.TestCase):
@@ -138,6 +165,19 @@ class TestSawtoothWorkload(unittest.TestCase):
                 self.assertEquals(st_offset_fcn(i * period), max_demand)
                 self.assertEquals(st_fcn(i * period + period / 2.0), max_demand)
                 self.assertEquals(st_offset_fcn(i * period + period / 2.0), 0)
+
+
+class TestWaveWorkload(unittest.TestCase):
+    """Unit tests for generating a wave (shifted sine) workload"""
+
+    def test_sawtooth(self):
+        """Verify wave value extremes."""
+        period = 4
+        max_demand = 2
+        st_fcn = lambda t: wave(t, period=period, offset=0,
+                                max_demand=max_demand)
+        test_wave = [st_fcn(i) for i in range(period + 1)]
+        assertListsAlmostEqual(self, test_wave, [0, 1, 2, 1, 0])
 
 
 if __name__ == '__main__':
