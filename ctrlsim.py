@@ -46,6 +46,8 @@ class LinkBalancerCtrl(Controller):
         Given a request that utilizes some bandwidth for a duration, map
         that request to an available path such that max link bandwidth util is
         minimized
+        @return the chosen best path as a list of consecutive link pairs
+         ((c1,sw1), (sw1,sw2),...,(sw_n, srv_x))
         """
         #1 get path list: from entry sw to available servers which can respond
         paths = []
@@ -278,6 +280,10 @@ class LinkBalancerSim(Simulation):
         """Run the full simulation.
         TODO: expand to continuous time with a priority queue, like discrete
         event sims do.
+          Comment[andi]: We might want to stick with discrete time if we
+          want to model elastic / non-constant traffic requirements (This 
+          essentially means our workload changes between flow arrivals and
+          expiries, so we have to calculate each step separately.)
 
         workload: a list of lists.
             Each top-level list element corresponds to one time step.
