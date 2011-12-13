@@ -563,6 +563,40 @@ class TestTwoSwitch(unittest.TestCase):
                 else:
                     self.assertTrue(metric_val > 0.0)
 
+    def test_two_ctrl_vary_phase(self):
+        """Ensure server RMSE is maximized when demands are out-of-phase
+        
+        When phase offset is zero, RMSE should be zero.
+        """
+        max_demand = 5
+        offset_steps = 10
+        for period in [10, 20]:
+            for workload_fcn in [sawtooth, wave]:
+                rmse_sums = []
+                for step in range(offset_steps + 1):
+                    offset = step / float(offset_steps) * period
+                    workload = dual_offset_workload(switches=self.SWITCHES,
+                                                    period=period,
+                                                    offset=offset,
+                                                    max_demand=max_demand,
+                                                    size=1, duration=1,
+                                                    timesteps=period,
+                                                    workload_fcn=workload_fcn)
+                    ctrls = self.two_ctrls()
+                    sim = LinkBalancerSim(two_switch_topo(), ctrls)
+                    metrics = sim.run(workload)
+                    rmse_sum = sum(metrics['rmse_servers'])
+                    rmse_sums.append(rmse_sum)
+    
+                # Ensure that RMSE sums start at 0, rise to max at period/2, then
+                # go back to 0 at the end.
+                for i in range(1, offset_steps / 2):
+                    self.assertTrue(rmse_sums[i] >= rmse_sums[i - 1])
+                for i in range(offset_steps / 2 + 1, offset_steps + 1):
+                    self.assertTrue(rmse_sums[i] <= rmse_sums[i - 1])
+                self.assertAlmostEqual(0.0, rmse_sums[0])
+                self.assertAlmostEqual(0.0, rmse_sums[-1])
+
 
 if __name__ == '__main__':
     unittest.main()
