@@ -5,9 +5,10 @@
 
 from math import sqrt
 import networkx as nx
-import sys
 from random import choice, randint, random
+import sys
 import unittest
+from workload import *
 
 
 class Controller(object):
@@ -88,8 +89,8 @@ class LinkBalancerCtrl(Controller):
                 bestpath = path
                 bestpathmetric = pathmetric
 
-        print >> sys.stderr, "DEBUG: " + str(self
-            ) + " choosing best path: " + str(bestpath) + str(linkmetrics)
+        #print >> sys.stderr, "DEBUG: " + str(self
+        #    ) + " choosing best path: " + str(bestpath) + str(linkmetrics)
         return bestpath
 
 
@@ -193,10 +194,12 @@ class LinkBalancerSim(Simulation):
         return sqrt(sum(values))
 
     def rmse_servers(self, graph=None):
-        """Calculate RMSE over server outgoing links"""
-        # Compute ideal used fraction of each server's outgoing link, assuming
-        # perfect split between them (regardless of discrete demands with
-        # bin-packing constraints).
+        """
+        Calculate RMSE over server outgoing links:
+        Compute ideal used fraction of each server's outgoing link, assuming
+        perfect split between them (regardless of discrete demands with
+        bin-packing constraints).
+        """
         if not graph:
             graph = self.graph
 
@@ -229,7 +232,7 @@ class LinkBalancerSim(Simulation):
 
     def allocate_resources(self, path=[], resources=0, whenfree=0):
         """
-        Subtract resources along path for each link (add to self.used[src][dst])
+        Subtract resources for each link in path (add to self.used[src][dst])
         Detect if any link in a path is fully utilized, do not oversubscribe
         Record the resources for link to be freed at time <whenfree>
         """
@@ -321,7 +324,7 @@ class LinkBalancerSim(Simulation):
 ###############################################################################
 
 
-class SimulatorTest(unittest.TestCase):
+class TestSimulator(unittest.TestCase):
     """Unit tests for LinkBalancerSim class"""
     graph = nx.DiGraph()
     graph.add_nodes_from(['sw1', 'sw2'], type='switch')
@@ -417,47 +420,7 @@ class SimulatorTest(unittest.TestCase):
 
 ###############################################################################
 
-
-def unit_workload(switches, size, duration, timesteps):
-    """
-    Return workload description with unit demands and unit length.
-
-    switches: list of switch names
-    size: data demand (unitless)
-    duration: length of each request (unitless)
-    timesteps: number of timesteps
-    returns: workload structure
-        # Workload is a list of lists.
-        # Each top-level list element corresponds to one time step.
-        # Each second-level list element is a tuple of:
-        #   (switch, size, duration)
-    """
-    workload = []
-    for t in range(timesteps):
-        requests = [(sw, size, duration) for sw in switches]
-        workload.append(requests)
-    return workload
-
-
-def random_workload(switches, size, duration, timesteps):
-    """
-    Return workload description with unit demands and unit length.
-    """
-    workload = []
-    minutil = 10
-    maxutil = 10
-    mindur = 1
-    maxdur = 1
-    for t in range(timesteps):
-        requests = [(choice(sw), randint(minutil, maxutil),
-                     randint(mindur, maxdur)) for sw in switches]
-        workload.append(requests)
-    return workload
-
-
-class TestTwoSwitch(unittest.TestCase):
-    """Unit tests for two-switch simulation scenario"""
-
+def two_switch_topo():
     graph = nx.DiGraph()
     graph.add_nodes_from(['sw1', 'sw2'], type='switch')
     graph.add_nodes_from(['s1', 's2'], type='server')
@@ -465,12 +428,18 @@ class TestTwoSwitch(unittest.TestCase):
                           ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
                           ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
                           ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
+    return graph
+
+
+class TestTwoSwitch(unittest.TestCase):
+    """Unit tests for two-switch simulation scenario"""
+
     SWITCHES = ['sw1', 'sw2']
     TIMESTEPS = 10
 
     def two_ctrls(self):
         """Return controller list with two different controllers."""
-        graph = self.graph
+        graph = two_switch_topo()
         ctrls = []
         c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'], graph=graph)
         c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'], graph=graph)
@@ -502,7 +471,7 @@ class TestTwoSwitch(unittest.TestCase):
         workload = unit_workload(switches=['sw1' ,'sw2'], size=1,
                                  duration=2, timesteps=1)
         ctrls = self.two_ctrls()
-        sim = LinkBalancerSim(self.graph, ctrls)
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
         metrics = sim.run(workload)
         #print metrics
         self.assertEqual(metrics['rmse_servers'][0], 0.0)
@@ -512,11 +481,47 @@ class TestTwoSwitch(unittest.TestCase):
         workload = unit_workload(switches=self.SWITCHES, size=1,
                                  duration=2, timesteps=self.TIMESTEPS)
         ctrls = self.two_ctrls()
-        sim = LinkBalancerSim(self.graph, ctrls)
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
         metrics = sim.run(workload)
         #print metrics
         for metric_val in metrics['rmse_servers']:
             self.assertEqual(metric_val, 0.0)
+
+    def test_two_ctrl_sawtooth_inphase(self):
+        """For in-phase sawtooth with 2 ctrls, ensure server RMSE == 0."""
+        period = 10
+        for max_demand in [2, 4, 8, 10]:
+            workload = dual_sawtooth_workload(switches=self.SWITCHES,
+                                              period=period, offset=0,
+                                              max_demand=max_demand, size=1,
+                                              duration=1, timesteps=2*period)
+            ctrls = self.two_ctrls()
+            sim = LinkBalancerSim(two_switch_topo(), ctrls)
+            metrics = sim.run(workload)
+            for metric_val in metrics['rmse_servers']:
+                self.assertAlmostEqual(metric_val, 0.0)
+
+    def test_two_ctrl_sawtooth_outofphase(self):
+        """For out-of-phase sawtooth with 2 ctrls, verify server RMSE.
+
+        Server RMSE = zero when sawtooths cross, non-zero otherwise.
+        """
+        max_demand = 5
+        for period in [4, 5, 10]:
+            workload = dual_sawtooth_workload(switches=self.SWITCHES,
+                                              period=period, offset=period/2.0,
+                                              max_demand=max_demand, size=1,
+                                              duration=1, timesteps=period)
+            ctrls = self.two_ctrls()
+            sim = LinkBalancerSim(two_switch_topo(), ctrls)
+            metrics = sim.run(workload)
+            self.assertEqual(len(metrics['rmse_servers']), period)
+            for i, metric_val in enumerate(metrics['rmse_servers']):
+                # When aligned with a sawtooth crossing, RMSE should be equal.
+                if i % (period / 2.0) == period / 4.0:
+                    self.assertAlmostEqual(metric_val, 0.0)
+                else:
+                    self.assertTrue(metric_val > 0.0)
 
 
 if __name__ == '__main__':
