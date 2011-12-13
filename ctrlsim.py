@@ -3,7 +3,7 @@
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 # Brandon Heller <brandonh@stanford.edu>
 
-from math import sqrt
+from math import sqrt, floor
 import networkx as nx
 import sys
 from random import choice, randint, random
@@ -449,9 +449,101 @@ def random_workload(switches, size, duration, timesteps):
     return workload
 
 
-class TestTwoSwitch(unittest.TestCase):
-    """Unit tests for two-switch simulation scenario"""
+def generic_workload(switch_workload_fcns, size, duration, timesteps):
+    """
+    Return workload description based on input functions for each switch
 
+    NOTE: when duration != timestep, requests will overlap, such that
+    the actual desired BW will not match the total request bandwidth.
+    NOTE: requests are equal in size
+    TODO: Generalize traffic generation to better model changing demand and
+    distributions.
+
+    switches_workload_fcns: dict of switch names to workload functions
+        A workload function returns the total demand at a given time.
+        Its only input is the current timestep.
+    size: bw of each request (unitless)
+        Requests are CBR and bin-packed until no more space remains.
+        TODO: Generalize the size/duration fields to support a type of UDP or
+            TCP.  Size/duration would only be needed for UDP then.
+    duration: length of each request (unitless)
+        Requests are CBR.
+    timesteps: number of timesteps
+    returns: workload structure
+        # Workload is a list of lists.
+        # Each top-level list element corresponds to one time step.
+        # Each second-level list element is a tuple of:
+        #   (switch, size, duration)
+    """
+    workload = []
+    switches = sorted(switch_workload_fcns.keys())
+    for t in range(timesteps):
+        requests = []
+        for sw in switches:
+            total_demand = switch_workload_fcns[sw](t)
+            # Approximate desired demand based on size
+            num_requests = int(floor(total_demand / float(size)))
+            for req in range(num_requests):
+                requests.append((sw, size, duration))
+        workload.append(requests)
+    return workload
+
+
+def sawtooth(t, period, offset, max_demand):
+    """Sawtooth: 0 to full to 0 with specified period"""
+    phase = (t + offset) % float(period)
+    if phase < period / 2.0:
+        return phase / float(period / 2.0) * max_demand
+    else:
+        return (period - phase) / float(period / 2.0) * max_demand
+
+
+def dual_sawtooth_workload(switches, period, offset, max_demand, size,
+                           duration, timesteps):
+    """
+    Return workload description with offset sawtooths.
+
+    switches: two-element list with switch names
+    period: sawtooth period (unitless)
+    offset: sawtooth shift, same time units as period
+    max_demand: maximum demand to start up during a timestep (unitless)
+    size: data demand (unitless)
+    duration: length of each request (unitless)
+    timesteps: number of timesteps
+    returns: workload structure
+        # Workload is a list of lists.
+        # Each top-level list element corresponds to one time step.
+        # Each second-level list element is a tuple of:
+        #   (switch, size, duration)
+    """
+    assert len(switches) == 2
+    switch_workload_fcns = {
+        switches[0]: lambda t: sawtooth(t, period, 0, max_demand),
+        switches[1]: lambda t: sawtooth(t, period, offset, max_demand)
+    }
+    return generic_workload(switch_workload_fcns, size, duration, timesteps)
+
+
+class TestSawtoothWorkload(unittest.TestCase):
+
+    def test_sawtooth(self):
+        """Verify sawtooth function value extremes."""
+        for period in [4, 5, 8, 10]:
+            max_demand = 10
+            reps = 2  # Repetition of full waveforms
+            st_fcn = lambda t: sawtooth(t, period = period, offset = 0,
+                                        max_demand = max_demand)
+            st_offset_fcn = lambda t: sawtooth(t, period = period,
+                                               offset = period / 2.0,
+                                               max_demand = max_demand)
+            for i in range(reps):
+                self.assertEquals(st_fcn(i * period), 0)
+                self.assertEquals(st_offset_fcn(i * period), max_demand)
+                self.assertEquals(st_fcn(i * period + period / 2.0), max_demand)
+                self.assertEquals(st_offset_fcn(i * period + period / 2.0), 0)
+
+
+def two_switch_topo():
     graph = nx.DiGraph()
     graph.add_nodes_from(['sw1', 'sw2'], type='switch')
     graph.add_nodes_from(['s1', 's2'], type='server')
@@ -459,12 +551,18 @@ class TestTwoSwitch(unittest.TestCase):
                           ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
                           ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
                           ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
+    return graph
+
+
+class TestTwoSwitch(unittest.TestCase):
+    """Unit tests for two-switch simulation scenario"""
+
     SWITCHES = ['sw1', 'sw2']
     TIMESTEPS = 10
 
     def two_ctrls(self):
         """Return controller list with two different controllers."""
-        graph = self.graph
+        graph = two_switch_topo()
         ctrls = []
         c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'], graph=graph)
         c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'], graph=graph)
@@ -496,7 +594,7 @@ class TestTwoSwitch(unittest.TestCase):
         workload = unit_workload(switches=['sw1' ,'sw2'], size=1,
                                  duration=2, timesteps=1)
         ctrls = self.two_ctrls()
-        sim = LinkBalancerSim(self.graph, ctrls)
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
         metrics = sim.run(workload)
         #print metrics
         self.assertEqual(metrics['rmse_servers'][0], 0.0)
@@ -506,11 +604,47 @@ class TestTwoSwitch(unittest.TestCase):
         workload = unit_workload(switches=self.SWITCHES, size=1,
                                  duration=2, timesteps=self.TIMESTEPS)
         ctrls = self.two_ctrls()
-        sim = LinkBalancerSim(self.graph, ctrls)
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
         metrics = sim.run(workload)
         #print metrics
         for metric_val in metrics['rmse_servers']:
             self.assertEqual(metric_val, 0.0)
+
+    def test_two_ctrl_sawtooth_inphase(self):
+        """For in-phase sawtooth with 2 ctrls, ensure server RMSE == 0."""
+        period = 10
+        for max_demand in [2, 4, 8, 10]:
+            workload = dual_sawtooth_workload(switches=self.SWITCHES,
+                                              period=period, offset=0,
+                                              max_demand=max_demand, size=1,
+                                              duration=1, timesteps=2*period)
+            ctrls = self.two_ctrls()
+            sim = LinkBalancerSim(two_switch_topo(), ctrls)
+            metrics = sim.run(workload)
+            for metric_val in metrics['rmse_servers']:
+                self.assertAlmostEqual(metric_val, 0.0)
+
+    def test_two_ctrl_sawtooth_outofphase(self):
+        """For out-of-phase sawtooth with 2 ctrls, verify server RMSE.
+
+        Server RMSE = zero when sawtooths cross, non-zero otherwise.
+        """
+        max_demand = 5
+        for period in [4, 5, 10]:
+            workload = dual_sawtooth_workload(switches=self.SWITCHES,
+                                              period=period, offset=period/2.0,
+                                              max_demand=max_demand, size=1,
+                                              duration=1, timesteps=period)
+            ctrls = self.two_ctrls()
+            sim = LinkBalancerSim(two_switch_topo(), ctrls)
+            metrics = sim.run(workload)
+            self.assertEqual(len(metrics['rmse_servers']), period)
+            for i, metric_val in enumerate(metrics['rmse_servers']):
+                # When aligned with a sawtooth crossing, RMSE should be equal.
+                if i % (period / 2.0) == period / 4.0:
+                    self.assertAlmostEqual(metric_val, 0.0)
+                else:
+                    self.assertTrue(metric_val > 0.0)
 
 
 if __name__ == '__main__':
