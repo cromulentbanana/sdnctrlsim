@@ -639,7 +639,8 @@ class TestController(unittest.TestCase):
 
 
 ###############################################################################
-
+#TODO: The absence of these function will break both TestTwoSwitch and
+# TestController classes -- we should probably make them static class methods
 def one_switch_topo():
     graph = nx.DiGraph()
     graph.add_nodes_from(['sw1'], type='switch')
@@ -708,7 +709,7 @@ class TestTwoSwitch(unittest.TestCase):
 
     def test_two_ctrl_one_step(self):
         """A single-step simulation run should have RMSE == 0."""
-        workload = unit_workload(switches=self.SWITCHES, size=1,
+        workload = unit_workload(switches=['sw1', 'sw2'], size=1,
                                  duration=2, timesteps=1)
         ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
@@ -732,7 +733,7 @@ class TestTwoSwitch(unittest.TestCase):
         """For in-phase sawtooth with 2 ctrls, ensure server RMSE == 0."""
         period = 10
         for max_demand in [2, 4, 8, 10]:
-            workload = dual_offset_workload(switches=self.SWITCHES,
+            workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=0,
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=2*period,
@@ -750,7 +751,7 @@ class TestTwoSwitch(unittest.TestCase):
         """
         max_demand = 5
         for period in [4, 5, 10]:
-            workload = dual_offset_workload(switches=self.SWITCHES,
+            workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=period/2.0,
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=period,
@@ -772,7 +773,7 @@ class TestTwoSwitch(unittest.TestCase):
         """For in-phase wave with 2 ctrls, ensure server RMSE == 0."""
         period = 10
         for max_demand in [2, 4, 8, 10]:
-            workload = dual_offset_workload(switches=self.SWITCHES,
+            workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=0,
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=2*period,
@@ -790,7 +791,7 @@ class TestTwoSwitch(unittest.TestCase):
         """
         max_demand = 5
         for period in [4, 5, 10]:
-            workload = dual_offset_workload(switches=self.SWITCHES,
+            workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=period/2.0,
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=period,
@@ -818,7 +819,7 @@ class TestTwoSwitch(unittest.TestCase):
                 rmse_sums = []
                 for step in range(offset_steps + 1):
                     offset = step / float(offset_steps) * period
-                    workload = dual_offset_workload(switches=self.SWITCHES,
+                    workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                                     period=period,
                                                     offset=offset,
                                                     max_demand=max_demand,
