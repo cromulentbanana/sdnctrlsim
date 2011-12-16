@@ -5,6 +5,7 @@
 
 import heapq
 from itertools import product
+import json
 from math import sqrt
 import networkx as nx
 from random import choice, randint, random
@@ -728,6 +729,9 @@ class TestTwoSwitch(unittest.TestCase):
                     'rmse_links': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0,
                                    0.0, 0.0, 0.0, 0.0, 0.0]}
         self.assertEqual(metrics, expected)
+        f = open('test_one_switch_multi_step.out', 'w')
+        print >>f, json.dumps(metrics)
+        f.close()
 
 ############ Refactored to here, @Dan, begin here tomorrow
 
