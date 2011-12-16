@@ -3,6 +3,7 @@
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 # Brandon Heller <brandonh@stanford.edu>
 
+import heapq
 from itertools import product
 from math import sqrt
 import networkx as nx
@@ -30,8 +31,6 @@ class Controller(object):
 
     def __str__(self):
         return "Controller %s of: %s" % (self.name, str(self.switches))
-        
-
 
     def set_name(self, name):
         self.name = name
@@ -66,7 +65,6 @@ class LinkBalancerCtrl(Controller):
         self.mylinks = []
         self.name = ""
 
-
     def learn_my_links(self, simgraph):
         """
         Learn the links of the sim graph that are directly observable by me
@@ -77,8 +75,7 @@ class LinkBalancerCtrl(Controller):
             if not (v in self.switches or u in self.switches):
                 continue
             self.graph[u][v]['valid'] = True
-            self.mylinks.append((u,v))
-
+            self.mylinks.append((u, v))
 
     def update_my_state(self, simgraph):
         """
@@ -91,11 +88,10 @@ class LinkBalancerCtrl(Controller):
             if not (self.graph[u][v]['used'] == simgraph[u][v]['used']):
                 self.graph[u][v]['used'] = simgraph[u][v]['used']
 
-
     def sync_toward(self, ctrl, specificedges=None, timestep=None):
         """
         Share the utilization state of links goverend by this controller with
-        another controller in a "push" fashion 
+        another controller in a "push" fashion
         Optionally specify only specific links to share with the other ctrl
         """
         if (specificedges):
@@ -106,30 +102,10 @@ class LinkBalancerCtrl(Controller):
         for link in mylinks:
             u, v = link
             ctrl.graph[u][v]['used'] = self.graph[u][v]['used']
-            #Valid could alternately hold the timestep to 
+            #Valid could alternately hold the timestep to
             #indicate last sync time
             ctrl.graph[u][v]['valid'] = True
-
         #print "%s sync to %s" % (self.name, ctrl.name)
-
-        # Dan's notes on controller synchronization
-        #if a link does not connect to any of a given controller's srvs or switches,
-        #what should we do:
-        #    - ignore it
-        #    + assume last known value (if ever known)
-        #
-        #how to specify when a synchronization should take place?
-        #    - when any state information changes at a controller
-        #            (in run(), if update flag, sync to all, unset flag)
-        #    - after an arbitrary time
-        #            (in run(), if sync desired, sync to all)
-        #
-        #simulation must update graph 'used' attribute for each controller
-        #for the links under its governance
-        #   + done
-        #
-        # should controllers pull or push their sync?
-        #
 
     def handle_request(self, sw=None, util=0, duration=0):
         """
@@ -158,7 +134,7 @@ class LinkBalancerCtrl(Controller):
                 # or synced from other controllers
                 #if not (v in self.switches or u in self.switches):
                 if not (self.graph[u][v].get('valid')):
-                    #print "%s skipping unknown link %s" % (str(self), str(link))
+                    #print "%s skipping link %s" % (str(self), str(link))
                     continue
                 used = self.graph[u][v]["used"] + util
                 capacity = self.graph[u][v]["capacity"]
@@ -197,7 +173,7 @@ class Simulation(object):
         switches: list of switch names
         servers: list of server names
         """
-        self.active_flows = {}
+        self.active_flows = []
         self.graph = graph
         for u, v in self.graph.edges():
             # Initialize edge utilization attribute values in graph
@@ -344,12 +320,27 @@ class LinkBalancerSim(Simulation):
             edge = self.graph.edge[src][dst]
             edge['used'] += resources
 
-        self.active_flows.setdefault(whenfree, []).append((path, resources))
+        heapq.heappush(self.active_flows, (whenfree, path, resources))
+#        self.active_flows.setdefault(whenfree, []).append((path, resources))
 #        print self.graph.edges(data=True)
 #        print >> sys.stderr, "DEBUG: Allocated " + str(resources
 #            ) + " to " + str(path)
 
-    def free_resources(self, timestep):
+    def free_resources(self, now):
+        """
+        Free (put back) resources along path for each link
+        for whom some flows have expired prior to now
+        """
+        aflows = self.active_flows
+        while (len(aflows) > 0 and aflows[0][0] <= now):
+            time, path, resources = heapq.heappop(aflows)
+            links = zip(path[:-1], path[1:])
+            for src, dst in links:
+                used = self.graph.edge[src][dst]['used']
+                self.graph.edge[src][dst]['used'] -= resources
+
+
+    def free_resources_old(self, timestep):
         """
         Free (put back) resources along path for each link
         Scales with number of simultaneous links
@@ -389,10 +380,43 @@ class LinkBalancerSim(Simulation):
             a.sync_toward(b)
 
     def run(self, workload):
+        return self.run_new(workload)
+
+    def run_new(self, workload, sync_rate=2):
+        """
+        Run the full simulation with new workload definition
+
+        sync_rate: after how many arrivals do we sync all ctrls
+        workload: new workload format. see workload.py
+        """
+        all_metrics = {}
+        for fcn in self.metric_fcns:
+            all_metrics[fcn.__name__] = []
+
+        for iters, request in enumerate(workload):
+            time_now, sw, size, duration = request
+            # Free link resources from flows that have ended by now
+            self.free_resources(time_now)
+            # Let every controller learn its state from the topology
+            for ctrl in self.ctrls:
+                ctrl.update_my_state(self.graph)
+            if (iters % sync_rate == 0):
+                self.sync_ctrls()
+
+            ctrl = self.sw_to_ctrl[sw]
+            path = ctrl.handle_request(sw, size, duration)
+            self.allocate_resources(path, size, duration + time_now)
+
+            # Compute metric(s) for this timestep
+            for fcn in self.metric_fcns:
+                all_metrics[fcn.__name__].append(fcn(self.graph))
+            #print >> sys.stderr, "DEBUG: time %i, metric %s" % (i, metric_val)
+
+        return all_metrics
+
+    def run_old(self, workload):
         """Run the full simulation.
-        FIXME: we have 2 notions of time... one per workload timestep, one per
-        request. We need to refactor this down to one time source. See FIXME
-        below:
+        TODO: deprecated
 
         TODO: expand to continuous time with a priority queue, like discrete
         event sims do.
@@ -426,7 +450,7 @@ class LinkBalancerSim(Simulation):
                 ctrl = self.sw_to_ctrl[sw]
                 path = ctrl.handle_request(sw, size, duration)
 
-                #FIXME: we're allocating resources after every request, but only
+                #FIXME we're allocating resources after every request, but only
                 #updating the ctrl graphs from the sim graph at each workload
                 #timestep
                 self.allocate_resources(path, size, duration + i)
@@ -436,7 +460,6 @@ class LinkBalancerSim(Simulation):
                 #TODO: Find an appropriate place to expose sync interface
                 if (True):
                     self.sync_ctrls()
-
 
             # Compute metric(s) for this timestep
             for fcn in self.metric_fcns:
@@ -501,14 +524,14 @@ class TestSimulator(unittest.TestCase):
         metric_before_alloc = sim.rmse_links(graph)
         path = nx.shortest_path(graph, 's1', 'sw1')
 
-        sim.allocate_resources(path, 40, 'some_time')
+        sim.allocate_resources(path, 40, '5')
         metric_after_alloc = sim.rmse_links(graph)
-        sim.free_resources('some_time')
+        sim.free_resources('5')
         metric_after_free = sim.rmse_links(graph)
 
         self.assertEqual(metric_before_alloc, metric_after_free)
         self.assertNotEqual(metric_before_alloc, metric_after_alloc)
-        self.assertEqual(len(sim.active_flows.keys()), 0)
+        self.assertEqual(len(sim.active_flows), 0)
 
     def test_multi_allocate_and_free(self):
         """Assert that resources allocated by flows are freed"""
@@ -540,7 +563,7 @@ class TestSimulator(unittest.TestCase):
         metric_after_free = sim.rmse_links(graph)
 
         self.assertEqual(metric_before_alloc, metric_after_free)
-        self.assertEqual(len(sim.active_flows.keys()), 0)
+        self.assertEqual(len(sim.active_flows), 0)
 
 
 class TestController(unittest.TestCase):
@@ -553,7 +576,6 @@ class TestController(unittest.TestCase):
         a, b = ctrls
         self.assertEqual(a.mylinks, [('sw1', 'sw2'), ('s1', 'sw1'),
                                      ('sw2', 'sw1')])
-        
 
     def test_update_ctrl_state(self):
         """Ensure that each controller updates its graph view from the sim"""
@@ -567,17 +589,17 @@ class TestController(unittest.TestCase):
         metrics = sim.run(workload)
 
         links = ctrls[0].graph.edges(data=True)
-        ctrlview = [(u,v,d['used']) for u,v,d in links]
+        ctrlview = [(u, v, d['used']) for u, v, d in links]
 
         links = sim.graph.edges(data=True)
-        simview = [(u,v,d['used']) for u,v,d in links]
+        simview = [(u, v, d['used']) for u, v, d in links]
 
         self.assertEqual(ctrlview, simview)
 
     def test_two_ctrl_unit_sync_idempotence(self):
         """Assert that sync action is idempotent and directed
-       
-        A sync from b toward a must not overwrite link attribute values goverend
+
+        Sync from b toward a must not overwrite link attribute values goverened
         by a and not goverend by b.
         """
         ctrls = two_ctrls()
@@ -623,13 +645,13 @@ class TestController(unittest.TestCase):
 
     def test_sync_changes_best_path(self):
         """Assert that sync changes the outcome of handle_request"""
-       
+
         ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
         a, b = ctrls
-        a.graph['s1']['sw1']['used'] = 10.0 
-        b.graph['s2']['sw2']['used'] = 1.0 
-    
+        a.graph['s1']['sw1']['used'] = 10.0
+        b.graph['s2']['sw2']['used'] = 1.0
+
         path_before = b.handle_request('sw2', 1, 1)
         self.assertEqual(path_before, ['s1', 'sw1', 'sw2'])
         a.sync_toward(b)
@@ -660,6 +682,7 @@ def two_switch_topo():
                           ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
     return graph
 
+
 def two_ctrls():
     """Return list of two different controllers."""
     graph = two_switch_topo()
@@ -672,10 +695,9 @@ def two_ctrls():
 
 ###############################################################################
 
+
 class TestTwoSwitch(unittest.TestCase):
     """Unit tests for two-switch simulation scenario"""
-
-    SWITCHES = ['sw1', 'sw2']
 
 #    def test_one_switch_oversubscribe(self):
 #        """Test that an oversubscribed network drops requests"""
@@ -686,29 +708,32 @@ class TestTwoSwitch(unittest.TestCase):
 #        sim = LinkBalancerSim(one_switch_topo(), ctrls)
 #        metrics = sim.run(workload)
 #        print metrics
-#        print 
+#        print
 #        for metric_val in metrics['rmse_servers']:
 #            self.assertEqual(metric_val, 0)
 #        for metric_val in metrics['rmse_links']:
 #            self.assertEqual(metric_val, 0)
 
-
     def test_one_switch_multi_step(self):
-        """For equal unit reqs and one switch, ensure that RMSE == 0."""
-        workload = unit_workload(switches=2 * ['sw1'], size=1,
+        """Test the new workload format"""
+        workload = unit_workload(sw=['sw1'], size=1,
                                  duration=2, timesteps=10)
 
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
-        metrics = sim.run(workload)
-        for metric_val in metrics['rmse_servers']:
-            self.assertEqual(metric_val, 0)
-        for metric_val in metrics['rmse_links']:
-            self.assertEqual(metric_val, 0)
+        metrics = sim.run_new(workload)
+        # The first run will be unbalanced because there's only 1 flow
+        expected = {'rmse_servers': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0,
+                                     0.0, 0.0, 0.0, 0.0, 0.0],
+                    'rmse_links': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.0]}
+        self.assertEqual(metrics, expected)
 
+############ Refactored to here, @Dan, begin here tomorrow
 
     def test_two_ctrl_one_step(self):
         """A single-step simulation run should have RMSE == 0."""
+        # This will fail because simulation with our graph is unbalanced after a single step
         workload = unit_workload(switches=['sw1', 'sw2'], size=1,
                                  duration=2, timesteps=1)
         ctrls = two_ctrls()
@@ -725,7 +750,7 @@ class TestTwoSwitch(unittest.TestCase):
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
         metrics = sim.run(workload)
 #        print metrics
-#        print 
+#        print
         for metric_val in metrics['rmse_servers']:
             self.assertEqual(metric_val, 0.0)
 
@@ -736,7 +761,7 @@ class TestTwoSwitch(unittest.TestCase):
             workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=0,
                                             max_demand=max_demand, size=1,
-                                            duration=1, timesteps=2*period,
+                                            duration=1, timesteps=2 * period,
                                             workload_fcn=sawtooth)
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
@@ -752,7 +777,7 @@ class TestTwoSwitch(unittest.TestCase):
         max_demand = 5
         for period in [4, 5, 10]:
             workload = dual_offset_workload(switches=['sw1', 'sw2'],
-                                            period=period, offset=period/2.0,
+                                            period=period, offset=period / 2.0,
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=period,
                                             workload_fcn=sawtooth)
@@ -760,7 +785,7 @@ class TestTwoSwitch(unittest.TestCase):
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             metrics = sim.run(workload)
 #            print metrics
-#            print 
+#            print
             self.assertEqual(len(metrics['rmse_servers']), period)
             for i, metric_val in enumerate(metrics['rmse_servers']):
                 # When aligned with a sawtooth crossing, RMSE should be equal.
@@ -776,7 +801,7 @@ class TestTwoSwitch(unittest.TestCase):
             workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=0,
                                             max_demand=max_demand, size=1,
-                                            duration=1, timesteps=2*period,
+                                            duration=1, timesteps=2 * period,
                                             workload_fcn=wave)
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
@@ -792,7 +817,7 @@ class TestTwoSwitch(unittest.TestCase):
         max_demand = 5
         for period in [4, 5, 10]:
             workload = dual_offset_workload(switches=['sw1', 'sw2'],
-                                            period=period, offset=period/2.0,
+                                            period=period, offset=period / 2.0,
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=period,
                                             workload_fcn=wave)
@@ -809,7 +834,7 @@ class TestTwoSwitch(unittest.TestCase):
 
     def test_two_ctrl_vary_phase(self):
         """Ensure server RMSE is maximized when demands are out-of-phase
-        
+
         When phase offset is zero, RMSE should be zero.
         """
         max_demand = 5
@@ -831,9 +856,9 @@ class TestTwoSwitch(unittest.TestCase):
                     metrics = sim.run(workload)
                     rmse_sum = sum(metrics['rmse_servers'])
                     rmse_sums.append(rmse_sum)
-    
-                # Ensure that RMSE sums start at 0, rise to max at period/2, then
-                # go back to 0 at the end.
+
+                # Ensure that RMSE sums start at 0, rise to max at period/2,
+                # then go back to 0 at the end.
                 for i in range(1, offset_steps / 2):
                     self.assertTrue(rmse_sums[i] >= rmse_sums[i - 1])
                 for i in range(offset_steps / 2 + 1, offset_steps + 1):
