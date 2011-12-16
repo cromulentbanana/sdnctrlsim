@@ -4,6 +4,7 @@
 # Brandon Heller <brandonh@stanford.edu>
 
 from itertools import product
+import json
 from math import sqrt
 import networkx as nx
 from random import choice, randint, random
@@ -705,6 +706,10 @@ class TestTwoSwitch(unittest.TestCase):
             self.assertEqual(metric_val, 0)
         for metric_val in metrics['rmse_links']:
             self.assertEqual(metric_val, 0)
+
+        f = open("test_one_switch_multi_step.out", 'w')
+        print >>f, json.dumps(metrics)
+        f.close()
 
 
     def test_two_ctrl_one_step(self):
