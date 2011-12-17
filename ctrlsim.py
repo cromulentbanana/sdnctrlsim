@@ -340,7 +340,6 @@ class LinkBalancerSim(Simulation):
                 used = self.graph.edge[src][dst]['used']
                 self.graph.edge[src][dst]['used'] -= resources
 
-
     def free_resources_old(self, timestep):
         """
         Free (put back) resources along path for each link
@@ -380,10 +379,7 @@ class LinkBalancerSim(Simulation):
                 continue
             a.sync_toward(b)
 
-    def run(self, workload):
-        return self.run_new(workload)
-
-    def run_new(self, workload, sync_rate=1):
+    def run(self, workload, sync_rate=1):
         """
         Run the full simulation with new workload definition
 
@@ -584,7 +580,7 @@ class TestController(unittest.TestCase):
                                  duration=2, numreqs=10)
         # Append a final arrival at time 20 to flush out any remaining
         # active flows
-        workload.append((20, 'sw1', 0, 1)) 
+        workload.append((20, 'sw1', 0, 1))
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
         metrics = sim.run(workload)
@@ -723,7 +719,6 @@ class TestTwoSwitch(unittest.TestCase):
         print >>f, json.dumps(metrics)
         f.close()
 
-
     def test_two_ctrl_multi_step(self):
         """For 2 synced controllers, server RMSE approaches 0."""
         workload = unit_workload(sw=['sw1', 'sw2'], size=1,
@@ -749,7 +744,7 @@ class TestTwoSwitch(unittest.TestCase):
                                             workload_fcn=sawtooth)
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run(workload)
+            metrics = sim.run_old(workload)
             for metric_val in metrics['rmse_servers']:
                 self.assertAlmostEqual(metric_val, 0.0)
             myname = sys._getframe().f_code.co_name
@@ -771,7 +766,7 @@ class TestTwoSwitch(unittest.TestCase):
                                             workload_fcn=sawtooth)
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run(workload)
+            metrics = sim.run_old(workload)
             self.assertEqual(len(metrics['rmse_servers']), period)
             for i, metric_val in enumerate(metrics['rmse_servers']):
                 # When aligned with a sawtooth crossing, RMSE should be equal.
@@ -795,7 +790,7 @@ class TestTwoSwitch(unittest.TestCase):
                                             workload_fcn=wave)
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run(workload)
+            metrics = sim.run_old(workload)
             for metric_val in metrics['rmse_servers']:
                 self.assertAlmostEqual(metric_val, 0.0)
             myname = sys._getframe().f_code.co_name
@@ -817,7 +812,7 @@ class TestTwoSwitch(unittest.TestCase):
                                             workload_fcn=wave)
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run(workload)
+            metrics = sim.run_old(workload)
             self.assertEqual(len(metrics['rmse_servers']), period)
             for i, metric_val in enumerate(metrics['rmse_servers']):
                 # When aligned with a wave crossing, RMSE should be equal.
@@ -851,7 +846,7 @@ class TestTwoSwitch(unittest.TestCase):
                                                     workload_fcn=workload_fcn)
                     ctrls = two_ctrls()
                     sim = LinkBalancerSim(two_switch_topo(), ctrls)
-                    metrics = sim.run(workload)
+                    metrics = sim.run_old(workload)
                     rmse_sum = sum(metrics['rmse_servers'])
                     rmse_sums.append(rmse_sum)
 

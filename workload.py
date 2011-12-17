@@ -15,7 +15,7 @@ def unit_workload(sw, size, duration, numreqs):
     sw: list of switch names
     size: data demand (unitless)
     duration: length of each request (unitless)
-    numreq: number of requests 
+    numreq: number of requests
     returns: workload structure
         # Workload is a list of tuples
         # Each list element corresponds to one request arrival:
@@ -39,8 +39,8 @@ def random_int_workload(sw, size, duration, numreqs):
     mindur = 1
     maxdur = 1
     for t in range(numreqs):
-        requests = (t, choice(sw), randint(minutil, maxutil), 
-                    randint(mindur,maxdur))
+        requests = (t, choice(sw), randint(minutil, maxutil),
+                    randint(mindur, maxdur))
         workload.append(requests)
     return workload
 
