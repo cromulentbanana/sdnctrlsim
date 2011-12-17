@@ -383,7 +383,7 @@ class LinkBalancerSim(Simulation):
     def run(self, workload):
         return self.run_new(workload)
 
-    def run_new(self, workload, sync_rate=2):
+    def run_new(self, workload, sync_rate=1):
         """
         Run the full simulation with new workload definition
 
@@ -580,11 +580,11 @@ class TestController(unittest.TestCase):
 
     def test_update_ctrl_state(self):
         """Ensure that each controller updates its graph view from the sim"""
-        workload = unit_workload(switches=2 * ['sw1'], size=1,
-                                 duration=2, timesteps=10)
-        # Pad workload with some empty workload timesteps to let the ctrl
-        # graph state synchronize to static sim graph
-        workload.extend([[], []])
+        workload = unit_workload(sw=['sw1'], size=1,
+                                 duration=2, numreqs=10)
+        # Append a final arrival at time 20 to flush out any remaining
+        # active flows
+        workload.append((20, 'sw1', 0, 1)) 
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
         metrics = sim.run(workload)
@@ -694,69 +694,49 @@ def two_ctrls():
     ctrls.append(c2)
     return ctrls
 
-###############################################################################
 
+###############################################################################
 
 class TestTwoSwitch(unittest.TestCase):
     """Unit tests for two-switch simulation scenario"""
 
-#    def test_one_switch_oversubscribe(self):
-#        """Test that an oversubscribed network drops requests"""
-#        workload = unit_workload(switches=2 * ['sw1'], size=1000,
-#                                 duration=2, timesteps=10)
-#
-#        ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
-#        sim = LinkBalancerSim(one_switch_topo(), ctrls)
-#        metrics = sim.run(workload)
-#        print metrics
-#        print
-#        for metric_val in metrics['rmse_servers']:
-#            self.assertEqual(metric_val, 0)
-#        for metric_val in metrics['rmse_links']:
-#            self.assertEqual(metric_val, 0)
+    def test_one_switch_oversubscribe(self):
+        """Test that an oversubscribed network drops requests"""
+        pass
 
     def test_one_switch_multi_step(self):
         """Test the new workload format"""
         workload = unit_workload(sw=['sw1'], size=1,
-                                 duration=2, timesteps=10)
+                                 duration=2, numreqs=10)
 
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
-        metrics = sim.run_new(workload)
+        metrics = sim.run(workload)
         # The first run will be unbalanced because there's only 1 flow
         expected = {'rmse_servers': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0,
                                      0.0, 0.0, 0.0, 0.0, 0.0],
                     'rmse_links': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0,
                                    0.0, 0.0, 0.0, 0.0, 0.0]}
         self.assertEqual(metrics, expected)
-        f = open('test_one_switch_multi_step.out', 'w')
+        myname = sys._getframe().f_code.co_name
+        f = open(myname + '.out', 'w')
         print >>f, json.dumps(metrics)
         f.close()
 
-############ Refactored to here, @Dan, begin here tomorrow
-
-    def test_two_ctrl_one_step(self):
-        """A single-step simulation run should have RMSE == 0."""
-        # This will fail because simulation with our graph is unbalanced after a single step
-        workload = unit_workload(switches=['sw1', 'sw2'], size=1,
-                                 duration=2, timesteps=1)
-        ctrls = two_ctrls()
-        sim = LinkBalancerSim(two_switch_topo(), ctrls)
-        metrics = sim.run(workload)
-        self.assertEqual(metrics['rmse_servers'][0], 0.0)
-        #self.assertEqual(metrics['rmse_links'][0], 0.0)
 
     def test_two_ctrl_multi_step(self):
-        """For equal unit reqs and two controllers, ensure server RMSE == 0."""
-        workload = unit_workload(switches=['sw1', 'sw2'], size=1,
-                                 duration=2, timesteps=10)
+        """For 2 synced controllers, server RMSE approaches 0."""
+        workload = unit_workload(sw=['sw1', 'sw2'], size=1,
+                                 duration=2, numreqs=10)
         ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
         metrics = sim.run(workload)
-#        print metrics
-#        print
-        for metric_val in metrics['rmse_servers']:
+        for metric_val in metrics['rmse_servers'][1:]:
             self.assertEqual(metric_val, 0.0)
+        myname = sys._getframe().f_code.co_name
+        f = open(myname + '.out', 'w')
+        print >>f, json.dumps(metrics)
+        f.close()
 
     def test_two_ctrl_sawtooth_inphase(self):
         """For in-phase sawtooth with 2 ctrls, ensure server RMSE == 0."""
@@ -772,6 +752,10 @@ class TestTwoSwitch(unittest.TestCase):
             metrics = sim.run(workload)
             for metric_val in metrics['rmse_servers']:
                 self.assertAlmostEqual(metric_val, 0.0)
+            myname = sys._getframe().f_code.co_name
+            f = open(myname + '.out', 'w')
+            print >>f, json.dumps(metrics)
+            f.close()
 
     def test_two_ctrl_sawtooth_outofphase(self):
         """For out-of-phase sawtooth with 2 ctrls, verify server RMSE.
@@ -788,8 +772,6 @@ class TestTwoSwitch(unittest.TestCase):
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             metrics = sim.run(workload)
-#            print metrics
-#            print
             self.assertEqual(len(metrics['rmse_servers']), period)
             for i, metric_val in enumerate(metrics['rmse_servers']):
                 # When aligned with a sawtooth crossing, RMSE should be equal.
@@ -797,6 +779,10 @@ class TestTwoSwitch(unittest.TestCase):
                     self.assertAlmostEqual(metric_val, 0.0)
                 else:
                     self.assertTrue(metric_val > 0.0)
+            myname = sys._getframe().f_code.co_name
+            f = open(myname + '.out', 'w')
+            print >>f, json.dumps(metrics)
+            f.close()
 
     def test_two_ctrl_wave_inphase(self):
         """For in-phase wave with 2 ctrls, ensure server RMSE == 0."""
@@ -812,6 +798,10 @@ class TestTwoSwitch(unittest.TestCase):
             metrics = sim.run(workload)
             for metric_val in metrics['rmse_servers']:
                 self.assertAlmostEqual(metric_val, 0.0)
+            myname = sys._getframe().f_code.co_name
+            f = open(myname + '.out', 'w')
+            print >>f, json.dumps(metrics)
+            f.close()
 
     def test_two_ctrl_wave_outofphase(self):
         """For out-of-phase wave with 2 ctrls, verify server RMSE.
@@ -835,6 +825,10 @@ class TestTwoSwitch(unittest.TestCase):
                     self.assertAlmostEqual(metric_val, 0.0)
                 else:
                     self.assertTrue(metric_val > 0.0)
+            myname = sys._getframe().f_code.co_name
+            f = open(myname + '.out', 'w')
+            print >>f, json.dumps(metrics)
+            f.close()
 
     def test_two_ctrl_vary_phase(self):
         """Ensure server RMSE is maximized when demands are out-of-phase
@@ -869,6 +863,10 @@ class TestTwoSwitch(unittest.TestCase):
                     self.assertTrue(rmse_sums[i] <= rmse_sums[i - 1])
                 self.assertAlmostEqual(0.0, rmse_sums[0])
                 self.assertAlmostEqual(0.0, rmse_sums[-1])
+        myname = sys._getframe().f_code.co_name
+        f = open(myname + '.out', 'w')
+        print >>f, json.dumps(metrics)
+        f.close()
 
 
 if __name__ == '__main__':

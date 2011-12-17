@@ -8,29 +8,28 @@ from random import choice, randint, random
 import unittest
 
 
-def unit_workload(sw, size, duration, timesteps):
+def unit_workload(sw, size, duration, numreqs):
     """
     Return workload description with unit demands and unit length.
 
     sw: list of switch names
     size: data demand (unitless)
     duration: length of each request (unitless)
-    timesteps: number of timesteps
+    numreq: number of requests 
     returns: workload structure
         # Workload is a list of tuples
-        # Each top-level list element corresponds to one time step.
-        # Each second-level list element is a tuple of:
-        #   (switch, size, duration)
+        # Each list element corresponds to one request arrival:
+        # (time of arrival, arriving at switch, size, duration)
     """
     workload = []
-    for t in range(timesteps):
+    for t in range(numreqs):
         requests = (t, sw[t % len(sw)], size, duration)
         workload.append(requests)
 
     return workload
 
 
-def random_int_workload(switches, size, duration, timesteps):
+def random_int_workload(sw, size, duration, numreqs):
     """
     Return workload description with random demands and lengths.
     """
@@ -39,8 +38,9 @@ def random_int_workload(switches, size, duration, timesteps):
     maxutil = 10
     mindur = 1
     maxdur = 1
-    for t in range(timesteps):
-        requests = (t, choice(sw), randint(minutil, maxutil), randint(mindur,maxdur))
+    for t in range(numreqs):
+        requests = (t, choice(sw), randint(minutil, maxutil), 
+                    randint(mindur,maxdur))
         workload.append(requests)
     return workload
 
