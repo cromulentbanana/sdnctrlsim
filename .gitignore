@@ -1,6 +1,7 @@
+*.pyc
+*.out
 bin/
 build/
-ctrlsim.pyc
 include/
 lib/
 share/
