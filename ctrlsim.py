@@ -743,6 +743,12 @@ class TestTwoSwitch(unittest.TestCase):
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=2 * period,
                                             workload_fcn=sawtooth)
+
+            myname = sys._getframe().f_code.co_name
+            f = open(myname + '.workload', 'w')
+            print >>f, json.dumps(workload)
+            f.close()
+
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             metrics = sim.run_old(workload)
@@ -765,6 +771,11 @@ class TestTwoSwitch(unittest.TestCase):
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=period,
                                             workload_fcn=sawtooth)
+            myname = sys._getframe().f_code.co_name
+            f = open(myname + '.workload', 'w')
+            print >>f, json.dumps(workload)
+            f.close()
+
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             metrics = sim.run_old(workload)
@@ -789,6 +800,11 @@ class TestTwoSwitch(unittest.TestCase):
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=2 * period,
                                             workload_fcn=wave)
+            myname = sys._getframe().f_code.co_name
+            f = open(myname + '.workload', 'w')
+            print >>f, json.dumps(workload)
+            f.close()
+
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             metrics = sim.run_old(workload)
@@ -811,6 +827,11 @@ class TestTwoSwitch(unittest.TestCase):
                                             max_demand=max_demand, size=1,
                                             duration=1, timesteps=period,
                                             workload_fcn=wave)
+            myname = sys._getframe().f_code.co_name
+            f = open(myname + '.workload', 'w')
+            print >>f, json.dumps(workload)
+            f.close()
+
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             metrics = sim.run_old(workload)
@@ -845,6 +866,11 @@ class TestTwoSwitch(unittest.TestCase):
                                                     size=1, duration=1,
                                                     timesteps=period,
                                                     workload_fcn=workload_fcn)
+                    myname = sys._getframe().f_code.co_name
+                    f = open(myname + workload_fcn + '.workload', 'w')
+                    print >>f, json.dumps(workload)
+                    f.close()
+
                     ctrls = two_ctrls()
                     sim = LinkBalancerSim(two_switch_topo(), ctrls)
                     metrics = sim.run_old(workload)
