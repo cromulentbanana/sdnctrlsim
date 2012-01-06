@@ -18,7 +18,7 @@ runs = []
 periods = [10, 20, 50, 100]
 for period in periods:
     periodruns = []
-    for syncrate in range(1,20):
+    for syncrate in range(1,21):
         for max_demand in [8]:
             workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=0,
@@ -38,7 +38,7 @@ for period in periods:
                                                       str(max_demand)), 'w')
             print >>f, json.dumps(metrics)
             f.close()
-    runs.append(periodruns)
+    runs.append((periodruns, period))
 
 cgen = colorGenerator()
 #for run in runs:
@@ -63,18 +63,14 @@ cgen = colorGenerator()
 
 for run in runs:
     avg_rmse = []
+    run, period = run
     for periodrun in run:
         metrics, syncrate = periodrun 
         for k, v in metrics.iteritems():
             if (k == "rmse_servers"):
-#                print syncrate
-#                print str(sum(v)/len(v))
-#                print v
                 avg_rmse.append(sum(v)/len(v))
 
-    print len(runs)
-        #plt.plot(range(len(run)), avg_rmse, label=str(periodrun), color=cgen.next())
-    plt.plot(range(len(run)), avg_rmse, label=str([10,20,50,100]), color=cgen.next())
+    plt.plot(range(1,len(run)+1), avg_rmse, label="workload period: %d" % period, color=cgen.next())
 
 
 plt.title("Timeseries")
