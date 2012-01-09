@@ -425,7 +425,7 @@ class LinkBalancerSim(Simulation):
 
         return all_metrics
 
-    def run_old(self, workload):
+    def run_old(self, workload, sync_rate=1):
         """Run the full simulation.
         TODO: deprecated
 
@@ -452,7 +452,7 @@ class LinkBalancerSim(Simulation):
             for ctrl in self.ctrls:
                 ctrl.update_my_state(self.graph)
             #TODO: Find an appropriate place to expose sync interface
-            if (True):
+            if (i % sync_rate == 0):
                 self.sync_ctrls()
             # Handle each request for this timestep
             for req in reqs:
@@ -469,7 +469,7 @@ class LinkBalancerSim(Simulation):
                 for ctrl in self.ctrls:
                     ctrl.update_my_state(self.graph)
                 #TODO: Find an appropriate place to expose sync interface
-                if (True):
+                if (i % sync_rate == 0):
                     self.sync_ctrls()
 
             # Compute metric(s) for this timestep
@@ -738,6 +738,11 @@ class TestTwoSwitch(unittest.TestCase):
         workload = unit_workload(sw=['sw1'], size=1,
                                  duration=2, numreqs=10)
 
+        myname = sys._getframe().f_code.co_name
+        f = open(myname + '.workload', 'w')
+        print >>f, json.dumps(workload)
+        f.close()
+
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
         metrics = sim.run(workload)
@@ -758,6 +763,11 @@ class TestTwoSwitch(unittest.TestCase):
         """For 2 synced controllers, server RMSE approaches 0."""
         workload = unit_workload(sw=['sw1', 'sw2'], size=1,
                                  duration=2, numreqs=10)
+        myname = sys._getframe().f_code.co_name
+        f = open(myname + '.workload', 'w')
+        print >>f, json.dumps(workload)
+        f.close()
+
         ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
         metrics = sim.run(workload)
@@ -888,13 +898,17 @@ class TestTwoSwitch(unittest.TestCase):
                                                     size=1, duration=1,
                                                     timesteps=period,
                                                     workload_fcn=workload_fcn)
-                    myname = sys._getframe().f_code.co_name
-
                     ctrls = two_ctrls()
                     sim = LinkBalancerSim(two_switch_topo(), ctrls)
                     metrics = sim.run_old(workload)
                     rmse_sum = sum(metrics['rmse_servers'])
                     rmse_sums.append(rmse_sum)
+
+                myname = sys._getframe().f_code.co_name
+                f = open(myname + str(workload_fcn) + '.workload', 'w')
+                print >>f, json.dumps(workload)
+                f.close()
+
 
                 # Ensure that RMSE sums start at 0, rise to max at period/2,
                 # then go back to 0 at the end.
