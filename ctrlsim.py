@@ -13,6 +13,13 @@ import sys
 import unittest
 from workload import *
 
+def sum_grouped_by(fnc, iterable):
+    res = {}
+    for i in iterable:
+        (key, val) = fnc(i)
+        res[key] = res.get(key, 0) + val
+    return res
+
 
 class Controller(object):
     """
@@ -221,7 +228,7 @@ class LinkBalancerSim(Simulation):
     """
     def __init__(self, *args, **kwargs):
         super(LinkBalancerSim, self).__init__(*args, **kwargs)
-        self.metric_fcns = [self.rmse_links, self.rmse_servers]
+        self.metric_fcns = [self.rmse_links, self.rmse_servers, self.simulation_trace]
 
     def metrics(self, graph=None):
         """Return dict of metric names to values"""
@@ -230,7 +237,7 @@ class LinkBalancerSim(Simulation):
             m[fcn.__name__] = fcn(self, graph)
         return m
 
-    def rmse_links(self, graph=None):
+    def rmse_links(self, graph=None,time_step=None,new_reqs=None):
         """
         Calculate RMSE over _all_ links
         Compute ideal used fraction over all links, assuming
@@ -266,7 +273,21 @@ class LinkBalancerSim(Simulation):
 
         return sqrt(sum(values))
 
-    def rmse_servers(self, graph=None):
+    def server_utilization(self, server, graph=None):
+        if not graph:
+            graph = self.graph
+
+        neighbor_sw = graph.neighbors(server)
+        if len(neighbor_sw) != 1:
+            raise NotImplementedError("Single server links only")
+        else:
+            src = server
+            dst = neighbor_sw[0]
+            capacity = graph[src][dst]["capacity"]
+            used = graph[src][dst]["used"]
+            return (used, capacity)
+
+    def rmse_servers(self, graph=None, time_step=None, new_reqs=None):
         """
         Calculate RMSE over server outgoing links:
         Compute ideal used fraction of each server's outgoing link, assuming
@@ -281,17 +302,10 @@ class LinkBalancerSim(Simulation):
         used_total = 0.0
         pairs = []  # list of (capacity, used) pairs
         for s in self.servers:
-            neighbor_sw = graph.neighbors(s)
-            if len(neighbor_sw) != 1:
-                raise NotImplementedError("Single server links only")
-            else:
-                src = s
-                dst = neighbor_sw[0]
-                capacity = graph[src][dst]["capacity"]
-                used = graph[src][dst]["used"]
-                pairs.append((capacity, used))
-                cap_total += capacity
-                used_total += used
+            (used, capacity) = self.server_utilization(s, graph)
+            pairs.append((capacity, used))
+            cap_total += capacity
+            used_total += used
 
         values = []  # values to be used in metric computation
         for pair in pairs:
@@ -406,7 +420,7 @@ class LinkBalancerSim(Simulation):
 
             # Compute metric(s) for this timestep
             for fcn in self.metric_fcns:
-                all_metrics[fcn.__name__].append(fcn(self.graph))
+                all_metrics[fcn.__name__].append(fcn(self.graph, time_step=time_now, new_reqs=[sw, size, duration]))
             #print >> sys.stderr, "DEBUG: time %i, metric %s" % (i, metric_val)
 
         return all_metrics
@@ -460,10 +474,29 @@ class LinkBalancerSim(Simulation):
 
             # Compute metric(s) for this timestep
             for fcn in self.metric_fcns:
-                all_metrics[fcn.__name__].append(fcn(self.graph))
+                all_metrics[fcn.__name__].append(fcn(self.graph, time_step=i, new_reqs=reqs))
+            
+            #sim_trace.append(self.collect_trace(i, reqs, self.graph))
             #print >> sys.stderr, "DEBUG: time %i, metric %s" % (i, metric_val)
 
+        
         return all_metrics
+
+    def run_and_trace(self, name, workload):
+        metrics = self.run_old(workload)
+        f = open(name + '.metrics', 'w')
+        print >>f, json.dumps(metrics,sort_keys=True, indent=4)
+        f.close()
+        return metrics
+
+    def simulation_trace(self,graph, time_step, new_reqs):
+      result = {
+         "step": time_step,
+         "new_reqs": new_reqs,
+         "servers":  map(lambda(x): (x, self.server_utilization(x)), self.servers),
+         "ingress":  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows)
+      }
+      return result
 
 ###############################################################################
 
@@ -709,6 +742,7 @@ class TestTwoSwitch(unittest.TestCase):
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
         metrics = sim.run(workload)
 
+        del metrics["simulation_trace"]
         # The first run will be unbalanced because there's only 1 flow
         expected = {'rmse_servers': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0,
                                      0.0, 0.0, 0.0, 0.0, 0.0],
@@ -772,13 +806,10 @@ class TestTwoSwitch(unittest.TestCase):
                                             duration=1, timesteps=period,
                                             workload_fcn=sawtooth)
             myname = sys._getframe().f_code.co_name
-            f = open(myname + '.workload', 'w')
-            print >>f, json.dumps(workload)
-            f.close()
 
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run_old(workload)
+            metrics = sim.run_and_trace(myname, workload)
             self.assertEqual(len(metrics['rmse_servers']), period)
             for i, metric_val in enumerate(metrics['rmse_servers']):
                 # When aligned with a sawtooth crossing, RMSE should be equal.
@@ -787,9 +818,6 @@ class TestTwoSwitch(unittest.TestCase):
                 else:
                     self.assertTrue(metric_val > 0.0)
             myname = sys._getframe().f_code.co_name
-            f = open(myname + '.out', 'w')
-            print >>f, json.dumps(metrics)
-            f.close()
 
     def test_two_ctrl_wave_inphase(self):
         """For in-phase wave with 2 ctrls, ensure server RMSE == 0."""
@@ -801,9 +829,6 @@ class TestTwoSwitch(unittest.TestCase):
                                             duration=1, timesteps=2 * period,
                                             workload_fcn=wave)
             myname = sys._getframe().f_code.co_name
-            f = open(myname + '.workload', 'w')
-            print >>f, json.dumps(workload)
-            f.close()
 
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
@@ -828,9 +853,6 @@ class TestTwoSwitch(unittest.TestCase):
                                             duration=1, timesteps=period,
                                             workload_fcn=wave)
             myname = sys._getframe().f_code.co_name
-            f = open(myname + '.workload', 'w')
-            print >>f, json.dumps(workload)
-            f.close()
 
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
@@ -867,9 +889,6 @@ class TestTwoSwitch(unittest.TestCase):
                                                     timesteps=period,
                                                     workload_fcn=workload_fcn)
                     myname = sys._getframe().f_code.co_name
-                    f = open(myname + workload_fcn + '.workload', 'w')
-                    print >>f, json.dumps(workload)
-                    f.close()
 
                     ctrls = two_ctrls()
                     sim = LinkBalancerSim(two_switch_topo(), ctrls)
