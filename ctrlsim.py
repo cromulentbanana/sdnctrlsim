@@ -866,7 +866,7 @@ class TestTwoSwitch(unittest.TestCase):
 
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run_old(workload)
+            metrics = sim.run_and_trace(myname, workload)
             self.assertEqual(len(metrics['rmse_servers']), period)
             for i, metric_val in enumerate(metrics['rmse_servers']):
                 # When aligned with a wave crossing, RMSE should be equal.
@@ -875,9 +875,6 @@ class TestTwoSwitch(unittest.TestCase):
                 else:
                     self.assertTrue(metric_val > 0.0)
             myname = sys._getframe().f_code.co_name
-            f = open(myname + '.out', 'w')
-            print >>f, json.dumps(metrics)
-            f.close()
 
     def test_two_ctrl_vary_phase(self):
         """Ensure server RMSE is maximized when demands are out-of-phase
