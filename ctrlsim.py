@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 #
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 # Brandon Heller <brandonh@stanford.edu>

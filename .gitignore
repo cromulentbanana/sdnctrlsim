@@ -1,5 +1,7 @@
 *.pyc
+*.swp
 *.out
+*.workload
 bin/
 build/
 include/
