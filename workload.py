@@ -139,6 +139,18 @@ def dual_offset_workload(switches, period, offset, max_demand, size,
     }
     return generic_workload(switch_workload_fcns, size, duration, timesteps)
 
+def old_to_new(workload):
+    """ 
+    Convert the old-style 2-level-lists of requests to list of timestamped
+    requests 
+    """
+    new_workload = []
+    for i, reqs in enumerate(workload):
+        for req in reqs:
+            assert len(req) == 3
+            new_workload.append((i, req[0], req[1], req[2]))
+    return new_workload
+
 
 def assertListsAlmostEqual(test, one, two):
     """Check that lists w/floating-point values are about equal.
@@ -173,7 +185,7 @@ class TestSawtoothWorkload(unittest.TestCase):
 class TestWaveWorkload(unittest.TestCase):
     """Unit tests for generating a wave (shifted sine) workload"""
 
-    def test_sawtooth(self):
+    def test_wave(self):
         """Verify wave value extremes."""
         period = 4
         max_demand = 2
