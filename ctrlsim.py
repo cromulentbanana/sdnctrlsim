@@ -260,9 +260,6 @@ class LinkBalancerSim(Simulation):
             cap_total += cap
             used_total += used
 
-#        print "DEBUG: cap total: " + str(cap_total)
-#        print "DEBUG: used total: " + str(used_total)
-#        print "DEBUG: pairs: " + str(pairs)
         values = []  # values to be used in metric computation
         for pair in pairs:
             capacity, used = pair
@@ -274,6 +271,8 @@ class LinkBalancerSim(Simulation):
         return sqrt(sum(values))
 
     def server_utilization(self, server, graph=None):
+        """ Return the raw server link capacity and utilization """
+
         if not graph:
             graph = self.graph
 
@@ -354,25 +353,6 @@ class LinkBalancerSim(Simulation):
                 used = self.graph.edge[src][dst]['used']
                 self.graph.edge[src][dst]['used'] -= resources
 
-    def free_resources_old(self, timestep):
-        """
-        Free (put back) resources along path for each link
-        Scales with number of simultaneous links
-        """
-        if timestep in self.active_flows:
-            for ending_flow in self.active_flows[timestep]:
-                path, resources = ending_flow
-                links = zip(path[:-1], path[1:])
-                for src, dst in links:
-                    used = self.graph.edge[src][dst]['used']
-                    self.graph.edge[src][dst]['used'] -= resources
-#                print >> sys.stderr, "DEBUG: Freed " + str(resources
-#                    ) + " to " + str(path)
-            # Allow grbg collection on the list of paths for this timestep
-            self.active_flows.pop(timestep)
-        else:
-            pass
-
     def sync_ctrls(self, ctrls=None):
         """
         Sync every ctrl with every other ctrl:
@@ -393,26 +373,28 @@ class LinkBalancerSim(Simulation):
                 continue
             a.sync_toward(b)
 
-    def run(self, workload, sync_rate=1):
+    def run(self, workload, sync_period=0):
         """
         Run the full simulation with new workload definition
 
-        sync_rate: after how many arrivals do we sync all ctrls
-        workload: new workload format. see workload.py
+        sync_period: after how much time do we sync all ctrls
+        workload: new workload format. see unit_workload in workload.py
         """
         all_metrics = {}
         for fcn in self.metric_fcns:
             all_metrics[fcn.__name__] = []
-
-        for iters, request in enumerate(workload):
+        
+        last_sync = 0
+        for request in workload:
             time_now, sw, size, duration = request
             # Free link resources from flows that have ended by now
             self.free_resources(time_now)
             # Let every controller learn its state from the topology
             for ctrl in self.ctrls:
                 ctrl.update_my_state(self.graph)
-            if (iters % sync_rate == 0):
+            if (sync_period >= 0  and (time_now - last_sync) >= sync_period):
                 self.sync_ctrls()
+                last_sync = time_now
 
             ctrl = self.sw_to_ctrl[sw]
             path = ctrl.handle_request(sw, size, duration)
@@ -421,75 +403,23 @@ class LinkBalancerSim(Simulation):
             # Compute metric(s) for this timestep
             for fcn in self.metric_fcns:
                 all_metrics[fcn.__name__].append(fcn(self.graph, time_step=time_now, new_reqs=[sw, size, duration]))
-            #print >> sys.stderr, "DEBUG: time %i, metric %s" % (i, metric_val)
 
         return all_metrics
 
-    def run_old(self, workload, sync_rate=1):
-        """Run the full simulation.
-        TODO: deprecated
-
-        TODO: expand to continuous time with a priority queue, like discrete
-        event sims do.
-          Comment[andi]: We might want to stick with discrete time if we
-          want to model elastic / non-constant traffic requirements (This
-          essentially means our workload changes between flow arrivals and
-          expiries, so we have to calculate each step separately.)
-
-        workload: a list of lists.
-            Each top-level list element corresponds to one time step.
-            Each second-level list element is a tuple of:
-              (switch of arrival, utilization, duration)
-        returns: dict of metric names to value list (one entry per timestep)
-        """
-        all_metrics = {}
-        for fcn in self.metric_fcns:
-            all_metrics[fcn.__name__] = []
-        for i, reqs in enumerate(workload):
-            # Free link resources from flows that terminate at this timestep
-            self.free_resources(i)
-            # Let every controller learn its state from the topology
-            for ctrl in self.ctrls:
-                ctrl.update_my_state(self.graph)
-            #TODO: Find an appropriate place to expose sync interface
-            if (i % sync_rate == 0):
-                self.sync_ctrls()
-            # Handle each request for this timestep
-            for req in reqs:
-                sw, size, duration = req
-                assert (isinstance(duration, int) and duration > 0)
-                ctrl = self.sw_to_ctrl[sw]
-                path = ctrl.handle_request(sw, size, duration)
-
-                #FIXME we're allocating resources after every request, but only
-                #updating the ctrl graphs from the sim graph at each workload
-                #timestep
-                self.allocate_resources(path, size, duration + i)
-                # Let every controller learn its state from the topology
-                for ctrl in self.ctrls:
-                    ctrl.update_my_state(self.graph)
-                #TODO: Find an appropriate place to expose sync interface
-                if (i % sync_rate == 0):
-                    self.sync_ctrls()
-
-            # Compute metric(s) for this timestep
-            for fcn in self.metric_fcns:
-                all_metrics[fcn.__name__].append(fcn(self.graph, time_step=i, new_reqs=reqs))
-            
-            #sim_trace.append(self.collect_trace(i, reqs, self.graph))
-            #print >> sys.stderr, "DEBUG: time %i, metric %s" % (i, metric_val)
-
-        
-        return all_metrics
+    def run_old(self, workload, sync_rate=0):
+        return self.run(old_to_new(workload), sync_rate)
 
     def run_and_trace(self, name, workload):
+        f = open(name + '.workload', 'w')
+        print >>f, json.dumps(workload,sort_keys=True, indent=4)
+        f.close()
         metrics = self.run_old(workload)
         f = open(name + '.metrics', 'w')
         print >>f, json.dumps(metrics,sort_keys=True, indent=4)
         f.close()
         return metrics
 
-    def simulation_trace(self,graph, time_step, new_reqs):
+    def simulation_trace(self, graph, time_step, new_reqs):
       result = {
          "step": time_step,
          "new_reqs": new_reqs,
@@ -789,19 +719,11 @@ class TestTwoSwitch(unittest.TestCase):
                                             workload_fcn=sawtooth)
 
             myname = sys._getframe().f_code.co_name
-            f = open(myname + '.workload', 'w')
-            print >>f, json.dumps(workload)
-            f.close()
-
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run_old(workload)
+            metrics = sim.run_and_trace(myname, workload)
             for metric_val in metrics['rmse_servers']:
-                self.assertAlmostEqual(metric_val, 0.0)
-            myname = sys._getframe().f_code.co_name
-            f = open(myname + '.out', 'w')
-            print >>f, json.dumps(metrics)
-            f.close()
+                self.assertAlmostEqual(metric_val, 0.0) #FIXME
 
     def test_two_ctrl_sawtooth_outofphase(self):
         """For out-of-phase sawtooth with 2 ctrls, verify server RMSE.
