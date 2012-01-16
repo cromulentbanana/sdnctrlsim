@@ -8,7 +8,6 @@ from itertools import product
 import json
 from math import sqrt
 import networkx as nx
-from random import choice, randint, random
 import sys
 import unittest
 from workload import *
@@ -335,10 +334,6 @@ class LinkBalancerSim(Simulation):
             edge['used'] += resources
 
         heapq.heappush(self.active_flows, (whenfree, path, resources))
-#        self.active_flows.setdefault(whenfree, []).append((path, resources))
-#        print self.graph.edges(data=True)
-#        print >> sys.stderr, "DEBUG: Allocated " + str(resources
-#            ) + " to " + str(path)
 
     def free_resources(self, now):
         """
@@ -373,47 +368,118 @@ class LinkBalancerSim(Simulation):
                 continue
             a.sync_toward(b)
 
-    def run(self, workload, sync_period=0):
+    def run(self, workload, sync_period=0, step_size=1, ignore_remaining=False):
         """
         Run the full simulation with new workload definition
 
-        sync_period: after how much time do we sync all ctrls
         workload: new workload format. see unit_workload in workload.py
+        sync_period: after how much time do we sync all ctrls
+            sync_period of 0 means "Sync between every flow arrival"
+        step_size: amount of time to step forward on each iteration of
+            simulation metrics computation 
+
+        time_now: time at which metrics are collected for the graph's state
+
         """
         all_metrics = {}
         for fcn in self.metric_fcns:
             all_metrics[fcn.__name__] = []
         
+        time_now = 0
+        arr_time = 0
         last_sync = 0
-        for request in workload:
-            time_now, sw, size, duration = request
-            # Free link resources from flows that have ended by now
+
+        # Step forward through time until our workload is exhausted
+        while (len(workload) > 0):
+            arr_time, sw, size, duration = workload[0]
+            new_reqs = []
+
+            while (arr_time <= time_now and len(workload) > 0):
+                arr_time, sw, size, duration = workload.pop(0)
+                # Free all resources that ended before or at arr_time
+                self.free_resources(arr_time)
+                # Let every controller learn its state from the topology
+                for ctrl in self.ctrls:
+                    ctrl.update_my_state(self.graph)
+                # Check if sync is necessary
+                time_elapsed_since_sync = arr_time - last_sync
+                if (time_elapsed_since_sync >= sync_period):
+                    self.sync_ctrls()
+                    if sync_period > 0:
+                        last_sync = arr_time - (time_elapsed_since_sync % sync_period)
+
+                # Allocate resrouces
+                ctrl = self.sw_to_ctrl[sw]
+                path = ctrl.handle_request(sw, size, duration)
+                self.allocate_resources(path, size, duration + arr_time)
+               
+
+                self.free_resources(time_now)
+                if len(workload) > 0:
+                    arr_time = workload[0][0]
+                    new_reqs.append([sw, size, duration])
+                else:
+                    arr_time=time_now
+                    self.free_resources(arr_time)
+
+            # We can now collect metrics and advance to the next timestep
+            for fcn in self.metric_fcns:
+                all_metrics[fcn.__name__].append(fcn(self.graph,
+                                                     time_step=time_now,
+                                                     new_reqs=new_reqs))
+            time_now += step_size
+            
+        if (ignore_remaining):
+            return all_metrics
+
+        # Progress and free any remaining active flows
+        while len(self.active_flows) > 0:
             self.free_resources(time_now)
             # Let every controller learn its state from the topology
             for ctrl in self.ctrls:
                 ctrl.update_my_state(self.graph)
-            if (sync_period >= 0  and (time_now - last_sync) >= sync_period):
-                self.sync_ctrls()
-                last_sync = time_now
-
-            ctrl = self.sw_to_ctrl[sw]
-            path = ctrl.handle_request(sw, size, duration)
-            self.allocate_resources(path, size, duration + time_now)
-
-            # Compute metric(s) for this timestep
             for fcn in self.metric_fcns:
-                all_metrics[fcn.__name__].append(fcn(self.graph, time_step=time_now, new_reqs=[sw, size, duration]))
+                all_metrics[fcn.__name__].append(fcn(self.graph,
+                                                     time_step=time_now,
+                                                     new_reqs=None))
+            time_now += step_size
 
         return all_metrics
+###########################################
+#        last_sync = 0
+#        for request in workload:
+#            time_now, sw, size, duration = request
+#            # Free link resources from flows that have ended by now
+#            self.free_resources(time_now)
+#            # Let every controller learn its state from the topology
+#            for ctrl in self.ctrls:
+#                ctrl.update_my_state(self.graph)
+#            if (sync_period >= 0  and (time_now - last_sync) >= sync_period):
+#                self.sync_ctrls()
+#                last_sync = time_now
+#
+#            ctrl = self.sw_to_ctrl[sw]
+#            path = ctrl.handle_request(sw, size, duration)
+#            self.allocate_resources(path, size, duration + time_now)
 
-    def run_old(self, workload, sync_rate=0):
-        return self.run(old_to_new(workload), sync_rate)
+            # Compute metric(s) for this timestep
 
-    def run_and_trace(self, name, workload):
+
+    def run_and_trace(self, name, workload, old=False, sync_period=0,
+                      step_size=1, ignore_remaining=False):
         f = open(name + '.workload', 'w')
         print >>f, json.dumps(workload,sort_keys=True, indent=4)
         f.close()
-        metrics = self.run_old(workload)
+        if (old):
+            workload = old_to_new(workload) 
+            f = open(name + '.newworkload', 'w')
+            print >>f, json.dumps(workload,sort_keys=True, indent=4)
+            f.close()
+            metrics = self.run(workload, sync_period, step_size,
+                               ignore_remaining)
+        else:
+            metrics = self.run(workload, sync_period, step_size,
+                               ignore_remaining)
         f = open(name + '.metrics', 'w')
         print >>f, json.dumps(metrics,sort_keys=True, indent=4)
         f.close()
@@ -421,10 +487,10 @@ class LinkBalancerSim(Simulation):
 
     def simulation_trace(self, graph, time_step, new_reqs):
       result = {
-         "step": time_step,
-         "new_reqs": new_reqs,
-         "servers":  map(lambda(x): (x, self.server_utilization(x)), self.servers),
-         "ingress":  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows)
+         "0_time": time_step,
+         "1_new_reqs": new_reqs,
+         "2_servers":  map(lambda(x): (x, self.server_utilization(x)), self.servers),
+         "3_ingress":  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows)
       }
       return result
 
@@ -532,7 +598,7 @@ class TestController(unittest.TestCase):
     def test_ctrl_learns_its_links(self):
         """Ensure that a controller learns which links it governs"""
         ctrls = two_ctrls()
-        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        LinkBalancerSim(two_switch_topo(), ctrls)
         a, b = ctrls
         self.assertEqual(a.mylinks, [('sw1', 'sw2'), ('s1', 'sw1'),
                                      ('sw2', 'sw1')])
@@ -546,7 +612,7 @@ class TestController(unittest.TestCase):
         workload.append((20, 'sw1', 0, 1))
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
-        metrics = sim.run(workload)
+        sim.run(workload)
 
         links = ctrls[0].graph.edges(data=True)
         ctrlview = [(u, v, d['used']) for u, v, d in links]
@@ -607,15 +673,18 @@ class TestController(unittest.TestCase):
         """Assert that sync changes the outcome of handle_request"""
 
         ctrls = two_ctrls()
-        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        LinkBalancerSim(two_switch_topo(), ctrls)
         a, b = ctrls
-        a.graph['s1']['sw1']['used'] = 10.0
-        b.graph['s2']['sw2']['used'] = 1.0
+        a.graph['s1']['sw1']['used'] = 95.0
+        b.graph['s2']['sw2']['used'] = 91.0
 
+        # Expect that we handle remotely since s2->sw2 is so overwhelmed
         path_before = b.handle_request('sw2', 1, 1)
         self.assertEqual(path_before, ['s1', 'sw1', 'sw2'])
         a.sync_toward(b)
         b.sync_toward(a)
+        # Now we should handle locally since s1->sw1 is even more overwhelmed
+        # than s2->sw2
         path_after = b.handle_request('sw2', 1, 1)
         self.assertEqual(path_after, ['s2', 'sw2'])
 
@@ -631,21 +700,46 @@ def one_switch_topo():
                           ['s2', 'sw1', {'capacity':100, 'used':0.0}]])
     return graph
 
-
 def two_switch_topo():
     graph = nx.DiGraph()
     graph.add_nodes_from(['sw1', 'sw2'], type='switch')
     graph.add_nodes_from(['s1', 's2'], type='server')
     graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
-                          ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
-                          ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':1001, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':1001, 'used':0.0}],
                           ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
+    return graph
+
+
+
+def two_switch_narrow_topo():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
+    graph.add_nodes_from(['s1', 's2'], type='server')
+    graph.add_edges_from([['s1', 'sw1', {'capacity':101, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':10, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':10, 'used':0.0}],
+                          ['s2', 'sw2', {'capacity':101, 'used':0.0}]])
+    return graph
+
+# Anja's topology suggestion to test for non-triviality of 'SW2'
+# decision on whom to send requests when not served by s2
+def three_switch_topo():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1', 'sw2', 'sw3'], type='switch')
+    graph.add_nodes_from(['s1', 's2', 's3'], type='server')
+    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':50, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':50, 'used':0.0}],
+                          ['sw2', 'sw3', {'capacity':50, 'used':0.0}],
+                          ['sw3', 'sw2', {'capacity':50, 'used':0.0}],
+                          ['s2', 'sw2', {'capacity':100, 'used':0.0}],
+                          ['s3', 'sw3', {'capacity':100, 'used':0.0}]])
     return graph
 
 
 def two_ctrls():
     """Return list of two different controllers."""
-    graph = two_switch_topo()
     ctrls = []
     c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])
     c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'])
@@ -653,6 +747,11 @@ def two_ctrls():
     ctrls.append(c2)
     return ctrls
 
+
+def metrics_by_unit_timestep(metrics):
+    """ convert a list of (time,metric) tuples into a list of metrics """
+    for time, value in metrics:
+        pass
 
 ###############################################################################
 
@@ -663,152 +762,160 @@ class TestTwoSwitch(unittest.TestCase):
         """Test that an oversubscribed network drops requests"""
         pass
 
-    def test_one_switch_multi_step(self):
-        """Test the new workload format"""
+    def test_one_ctrl_simple(self):
+        """For 1 controller the server RMSE must approach 0.
+
+        With one controller, one switch, and two servers as unit requests
+        arrive at the switch, the requests should be balanced over both servers
+        (Except for the first and 2nd to last timesteps).
+
+        We also test to ensure that the number of timesteps is correct
+        """
+
+        self.maxDiff = None
         workload = unit_workload(sw=['sw1'], size=1,
                                  duration=2, numreqs=10)
 
         myname = sys._getframe().f_code.co_name
-        f = open(myname + '.workload', 'w')
-        print >>f, json.dumps(workload)
-        f.close()
 
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
-        metrics = sim.run(workload)
+        metrics = sim.run_and_trace(myname, workload, sync_period=0, step_size=1, ignore_remaining=False)
 
         del metrics["simulation_trace"]
         # The first run will be unbalanced because there's only 1 flow
-        expected = {'rmse_servers': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0,
-                                     0.0, 0.0, 0.0, 0.0, 0.0],
-                    'rmse_links': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0,
-                                   0.0, 0.0, 0.0, 0.0, 0.0]}
+        # Ditto with 2nd to last timestep, as there's only one active flow
+        # remaining. Unit workload will last ((numreqs - 1 ) + duration) steps
+        expected = {'rmse_servers': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                     0.0, 0.0, 0.0, 0.0, 0.7071067811865476, 0.0],
+                    'rmse_links': [0.7071067811865476, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                   0.0, 0.0, 0.0, 0.0, 0.7071067811865476, 0.0]}
         self.assertEqual(metrics, expected)
-        myname = sys._getframe().f_code.co_name
-        f = open(myname + '.out', 'w')
-        print >>f, json.dumps(metrics)
-        f.close()
 
-    def test_two_ctrl_multi_step(self):
-        """For 2 synced controllers, server RMSE approaches 0."""
+    def test_two_ctrl_simple(self):
+        """For 2 perfectly synced controllers, server RMSE approaches 0."""
         workload = unit_workload(sw=['sw1', 'sw2'], size=1,
                                  duration=2, numreqs=10)
-        myname = sys._getframe().f_code.co_name
-        f = open(myname + '.workload', 'w')
-        print >>f, json.dumps(workload)
-        f.close()
 
         ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
-        metrics = sim.run(workload)
+        myname = sys._getframe().f_code.co_name
+        metrics = sim.run_and_trace(myname, workload, ignore_remaining=True)
+        # see test_one_ctrl_multi_step for why we slice
         for metric_val in metrics['rmse_servers'][1:]:
             self.assertEqual(metric_val, 0.0)
-        myname = sys._getframe().f_code.co_name
-        f = open(myname + '.out', 'w')
-        print >>f, json.dumps(metrics)
-        f.close()
 
     def test_two_ctrl_sawtooth_inphase(self):
-        """For in-phase sawtooth with 2 ctrls, ensure server RMSE == 0."""
-        period = 10
-        for max_demand in [2, 4, 8, 10]:
+        """For in-phase sawtooth with 2 synced ctrls, ensure server RMSE == 0."""
+        period = 8 
+        for max_demand in [2, 4, 8, 9]:
+            timesteps = period * 2
             workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=0,
                                             max_demand=max_demand, size=1,
-                                            duration=1, timesteps=2 * period,
+                                            duration=1, timesteps=timesteps,
                                             workload_fcn=sawtooth)
 
-            myname = sys._getframe().f_code.co_name
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run_and_trace(myname, workload)
+            myname = sys._getframe().f_code.co_name
+            metrics = sim.run_and_trace(myname, workload, old=True,
+                                        sync_period=timesteps)
             for metric_val in metrics['rmse_servers']:
-                self.assertAlmostEqual(metric_val, 0.0) #FIXME
+                self.assertAlmostEqual(metric_val, 0.0)
 
     def test_two_ctrl_sawtooth_outofphase(self):
         """For out-of-phase sawtooth with 2 ctrls, verify server RMSE.
 
         Server RMSE = zero when sawtooths cross, non-zero otherwise.
         """
-        max_demand = 5
-        for period in [4, 5, 10]:
-            workload = dual_offset_workload(switches=['sw1', 'sw2'],
-                                            period=period, offset=period / 2.0,
-                                            max_demand=max_demand, size=1,
-                                            duration=1, timesteps=period,
-                                            workload_fcn=sawtooth)
-            myname = sys._getframe().f_code.co_name
+        for period in [2, 4, 5, 10]:
+            timesteps = period * 2
+            dur = 1
+            for max_demand in [2,4,6,8,10]:
+                workload = dual_offset_workload(switches=['sw1', 'sw2'],
+                                                period=period, offset=period / 2.0,
+                                                max_demand=max_demand, size=1,
+                                                duration=dur, timesteps=timesteps,
+                                                workload_fcn=sawtooth)
 
-            ctrls = two_ctrls()
-            sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run_and_trace(myname, workload)
-            self.assertEqual(len(metrics['rmse_servers']), period)
-            for i, metric_val in enumerate(metrics['rmse_servers']):
-                # When aligned with a sawtooth crossing, RMSE should be equal.
-                if i % (period / 2.0) == period / 4.0:
-                    self.assertAlmostEqual(metric_val, 0.0)
-                else:
-                    self.assertTrue(metric_val > 0.0)
-            myname = sys._getframe().f_code.co_name
+                ctrls = two_ctrls()
+                sim = LinkBalancerSim(two_switch_topo(), ctrls)
+                myname = sys._getframe().f_code.co_name + str(period)
+                metrics = sim.run_and_trace(myname, workload, old=True,
+                                            sync_period=timesteps,
+                                            ignore_remaining=True)
+                self.assertEqual(len(metrics['rmse_servers']), timesteps)
+                for i, metric_val in enumerate(metrics['rmse_servers']):
+                    # When aligned with a sawtooth crossing, RMSE should be equal.
+                    if i % (period / 2.0) == period / 4.0:
+                        self.assertAlmostEqual(metric_val, 0.0)
+                    else:
+                        self.assertTrue(metric_val > 0.0)
 
     def test_two_ctrl_wave_inphase(self):
         """For in-phase wave with 2 ctrls, ensure server RMSE == 0."""
         period = 10
-        for max_demand in [2, 4, 8, 10]:
+        timesteps = period * 2
+        # When max_demand * server link >= switch link, 
+        # loads will go unbalanced  due to controller decision to use
+        # inter-switch links
+        for max_demand in [2, 4, 8, 9, 10]:
             workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=0,
                                             max_demand=max_demand, size=1,
-                                            duration=1, timesteps=2 * period,
+                                            duration=1, timesteps=timesteps,
                                             workload_fcn=wave)
-            myname = sys._getframe().f_code.co_name
 
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run_old(workload)
+            myname = sys._getframe().f_code.co_name
+            metrics = sim.run_and_trace(myname, workload, old=True,
+                                        sync_period=timesteps)
             for metric_val in metrics['rmse_servers']:
                 self.assertAlmostEqual(metric_val, 0.0)
-            myname = sys._getframe().f_code.co_name
-            f = open(myname + '.out', 'w')
-            print >>f, json.dumps(metrics)
-            f.close()
 
     def test_two_ctrl_wave_outofphase(self):
         """For out-of-phase wave with 2 ctrls, verify server RMSE.
 
+        Controllers never sync
         Server RMSE = zero when waves cross, non-zero otherwise.
         """
-        max_demand = 5
-        for period in [4, 5, 10]:
+        for period in [4, 5, 8, 10]:
+            max_demand = 8
+            dur = 1
+            timesteps = period * 2
             workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                             period=period, offset=period / 2.0,
                                             max_demand=max_demand, size=1,
-                                            duration=1, timesteps=period,
+                                            duration=dur, timesteps=timesteps,
                                             workload_fcn=wave)
-            myname = sys._getframe().f_code.co_name
 
             ctrls = two_ctrls()
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
-            metrics = sim.run_old(workload)
-            self.assertEqual(len(metrics['rmse_servers']), period)
+            myname = sys._getframe().f_code.co_name + str(period)
+            metrics = sim.run_and_trace(myname, workload, old=True,
+                                        sync_period=timesteps,
+                                        ignore_remaining=True)
+            self.assertEqual(len(metrics['rmse_servers']), timesteps)
             for i, metric_val in enumerate(metrics['rmse_servers']):
                 # When aligned with a wave crossing, RMSE should be equal.
                 if i % (period / 2.0) == period / 4.0:
                     self.assertAlmostEqual(metric_val, 0.0)
                 else:
                     self.assertTrue(metric_val > 0.0)
-            myname = sys._getframe().f_code.co_name
-            f = open(myname + '.out', 'w')
-            print >>f, json.dumps(metrics)
-            f.close()
 
     def test_two_ctrl_vary_phase(self):
         """Ensure server RMSE is maximized when demands are out-of-phase
 
+        Controllers never sync
         When phase offset is zero, RMSE should be zero.
         """
-        max_demand = 5
-        offset_steps = 10
         for period in [10, 20]:
+            offset_steps = 10
+            timesteps = period * 2
+            max_demand = 10
+#            for max_demand in [2,5,10,20]:
             for workload_fcn in [sawtooth, wave]:
                 rmse_sums = []
                 for step in range(offset_steps + 1):
@@ -818,18 +925,17 @@ class TestTwoSwitch(unittest.TestCase):
                                                     offset=offset,
                                                     max_demand=max_demand,
                                                     size=1, duration=1,
-                                                    timesteps=period,
+                                                    timesteps=timesteps,
                                                     workload_fcn=workload_fcn)
                     ctrls = two_ctrls()
                     sim = LinkBalancerSim(two_switch_topo(), ctrls)
-                    metrics = sim.run_old(workload)
+                    myname = sys._getframe().f_code.co_name
+                    metrics = sim.run_and_trace(myname, workload, old=True,
+                                                sync_period=timesteps,
+                                                ignore_remaining=True)
                     rmse_sum = sum(metrics['rmse_servers'])
                     rmse_sums.append(rmse_sum)
 
-                myname = sys._getframe().f_code.co_name
-                f = open(myname + str(workload_fcn) + '.workload', 'w')
-                print >>f, json.dumps(workload)
-                f.close()
 
 
                 # Ensure that RMSE sums start at 0, rise to max at period/2,
@@ -840,10 +946,6 @@ class TestTwoSwitch(unittest.TestCase):
                     self.assertTrue(rmse_sums[i] <= rmse_sums[i - 1])
                 self.assertAlmostEqual(0.0, rmse_sums[0])
                 self.assertAlmostEqual(0.0, rmse_sums[-1])
-        myname = sys._getframe().f_code.co_name
-        f = open(myname + '.out', 'w')
-        print >>f, json.dumps(metrics)
-        f.close()
 
 
 if __name__ == '__main__':
