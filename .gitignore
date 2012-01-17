@@ -1,7 +1,8 @@
 *.pyc
 *.swp
-*.out
+*.metrics
 *.workload
+*.newworkload
 bin/
 build/
 include/
