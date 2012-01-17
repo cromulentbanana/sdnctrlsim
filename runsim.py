@@ -21,7 +21,7 @@ def test_two_ctrl_wave_outofphase(sync_period=None):
     Controllers never sync
     Server RMSE = zero when waves cross, non-zero otherwise.
     """
-    for period in [32]:
+    for period in [16]:
         max_demand = 8
         dur = 1
         timesteps = period * 2
@@ -39,7 +39,7 @@ def test_two_ctrl_wave_outofphase(sync_period=None):
         myname +=  str(period) + "." + str(sync_period)
 
 
-        metrics = sim.run_and_trace(myname, workload, old=True,
+        sim.run_and_trace(myname, workload, old=True,
                                     sync_period=sync_period,
                                     ignore_remaining=True)
 
@@ -48,9 +48,7 @@ for i in range(0,32):
 
 
 
-
-
-cgen = colorGenerator()
+#cgen = colorGenerator()
 #for run in runs:
 #    for periodrun in run:
 #        metrics, sync_period = periodrun

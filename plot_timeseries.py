@@ -26,16 +26,35 @@ parser.add_argument('--out', '-o',
 args = parser.parse_args()
 
 cgen = colorGenerator()
+fgen = fmtGenerator()
 for f in args.files:
     ff = open(f, 'r')
-    for line in ff:
-        j = json.loads(line)
-        for k, v in j.iteritems():
-            plt.plot(range(len(v)), v, label=k, color=cgen.next())
+    j = json.loads("".join(ff.readlines()).strip())
+    rmsesrv = j["rmse_servers"]
+    trace = j["simulation_trace"]
+    ingress = [ i['3_ingress'] for i in trace ]
+    ingress_switches = {}
+    ingress_switch_vals = {}
+    # collect all switches which show ingress at some point
+    for i in ingress:
+        for k,v in i.iteritems():
+           ingress_switches.setdefault(k,[])
+
+    for i in ingress:
+        for switch in ingress_switches.keys():
+            if switch in i.keys():
+                value = i[switch]
+            else:
+                value = 0
+            ingress_switch_vals.setdefault(switch,[]).append(value)
+
+    for k, v in ingress_switch_vals.iteritems():
+        plt.plot(range(len(v)), v, fgen.next()+'--', label="units wkload ingress at " + k, color=cgen.next())
+    plt.plot(range(len(rmsesrv)), rmsesrv, fgen.next()+'-', label="RMSE "+str(f), color=cgen.next())
     ff.close()
 
-plt.title("Timeseries")
-plt.ylabel("RMSE")
+plt.title("Timeseries " + str(f))
+plt.ylabel("")
 plt.xlabel("Time (ticks)")
 plt.grid()
 plt.legend()
