@@ -89,6 +89,14 @@ def pc99(lst):
 def coeff_variation(lst):
     return stdev(lst) / avg(lst)
 
+def fmtGenerator():
+    "Return cycling list of formats"
+    colors = [ 'o', 'D', 'h', 'p', '^', 
+            '>', 'v', '<', '+', 'x']
+    index = 0
+    while True:
+        yield colors[ index ]
+        index = ( index + 1 ) % len( colors )
 def colorGenerator():
     "Return cycling list of colors"
     colors = [ 'red', 'green', 'blue', 'purple', 'orange', 

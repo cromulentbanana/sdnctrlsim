@@ -7,10 +7,13 @@ import heapq
 from itertools import product
 import json
 from math import sqrt
+import matplotlib.pyplot as plt
 import networkx as nx
+import os
 import sys
 import unittest
 from workload import *
+
 
 def sum_grouped_by(fnc, iterable):
     res = {}
@@ -227,7 +230,8 @@ class LinkBalancerSim(Simulation):
     """
     def __init__(self, *args, **kwargs):
         super(LinkBalancerSim, self).__init__(*args, **kwargs)
-        self.metric_fcns = [self.rmse_links, self.rmse_servers, self.simulation_trace]
+        self.metric_fcns = [self.rmse_links, self.rmse_servers,
+                            self.simulation_trace]
 
     def metrics(self, graph=None):
         """Return dict of metric names to values"""
@@ -236,7 +240,7 @@ class LinkBalancerSim(Simulation):
             m[fcn.__name__] = fcn(self, graph)
         return m
 
-    def rmse_links(self, graph=None,time_step=None,new_reqs=None):
+    def rmse_links(self, graph=None, time_step=None, new_reqs=None):
         """
         Calculate RMSE over _all_ links
         Compute ideal used fraction over all links, assuming
@@ -376,7 +380,7 @@ class LinkBalancerSim(Simulation):
         sync_period: after how much time do we sync all ctrls
             sync_period of 0 means "Sync between every flow arrival"
         step_size: amount of time to step forward on each iteration of
-            simulation metrics computation 
+            simulation metrics computation
 
         time_now: time at which metrics are collected for the graph's state
 
@@ -384,7 +388,7 @@ class LinkBalancerSim(Simulation):
         all_metrics = {}
         for fcn in self.metric_fcns:
             all_metrics[fcn.__name__] = []
-        
+
         time_now = 0
         arr_time = 0
         last_sync = 0
@@ -464,15 +468,32 @@ class LinkBalancerSim(Simulation):
 
             # Compute metric(s) for this timestep
 
-
     def run_and_trace(self, name, workload, old=False, sync_period=0,
                       step_size=1, ignore_remaining=False):
-        f = open(name + '.workload', 'w')
+        """
+        Run and produce a log of the simulation for each timestep
+        Also, convert an old format workload to new format if old=TRUE
+        
+        Dump the metrics, workload, and (if old-format) the converted
+        new-format workload to JSON as files
+
+        Return the metrics
+        """
+        filename = 'logs/' + name 
+        dir = os.path.dirname(filename)
+        try:
+                os.stat(dir)
+        except:
+                os.mkdir(dir)
+
+        f = open(filename + '.workload', 'w')
         print >>f, json.dumps(workload,sort_keys=True, indent=4)
         f.close()
+
         if (old):
+            # Document the converted old_to_new network graph
             workload = old_to_new(workload) 
-            f = open(name + '.newworkload', 'w')
+            f = open(filename + '.newworkload', 'w')
             print >>f, json.dumps(workload,sort_keys=True, indent=4)
             f.close()
             metrics = self.run(workload, sync_period, step_size,
@@ -480,9 +501,21 @@ class LinkBalancerSim(Simulation):
         else:
             metrics = self.run(workload, sync_period, step_size,
                                ignore_remaining)
-        f = open(name + '.metrics', 'w')
-        print >>f, json.dumps(metrics,sort_keys=True, indent=4)
+
+        f = open(filename + '.metrics', 'w')
+        print >>f, json.dumps(metrics, sort_keys=True, indent=4)
         f.close()
+
+
+        # Document the network graph
+        #TODO: Adds a good 10 seconds to the test runs
+        try:
+            os.stat(filename + ".pdf")
+        except:
+            nx.draw(self.graph)
+            plt.savefig(filename + ".pdf")
+            plt.close()
+            
         return metrics
 
     def simulation_trace(self, graph, time_step, new_reqs):
@@ -494,19 +527,79 @@ class LinkBalancerSim(Simulation):
       }
       return result
 
+
+###############################################################################
+# Test helper functions
+###############################################################################
+
+def one_switch_topo():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1'], type='switch')
+    graph.add_nodes_from(['s1', 's2'], type='server')
+    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
+                          ['s2', 'sw1', {'capacity':100, 'used':0.0}]])
+    return graph
+
+def two_switch_topo():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
+    graph.add_nodes_from(['s1', 's2'], type='server')
+    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':1001, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':1001, 'used':0.0}],
+                          ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
+    return graph
+
+
+
+def two_switch_narrow_topo():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
+    graph.add_nodes_from(['s1', 's2'], type='server')
+    graph.add_edges_from([['s1', 'sw1', {'capacity':101, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':10, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':10, 'used':0.0}],
+                          ['s2', 'sw2', {'capacity':101, 'used':0.0}]])
+    return graph
+
+# Anja's topology suggestion to test for non-triviality of 'SW2'
+# decision on whom to send requests when not served by s2
+def three_switch_topo():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1', 'sw2', 'sw3'], type='switch')
+    graph.add_nodes_from(['s1', 's2', 's3'], type='server')
+    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':50, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':50, 'used':0.0}],
+                          ['sw2', 'sw3', {'capacity':50, 'used':0.0}],
+                          ['sw3', 'sw2', {'capacity':50, 'used':0.0}],
+                          ['s2', 'sw2', {'capacity':100, 'used':0.0}],
+                          ['s3', 'sw3', {'capacity':100, 'used':0.0}]])
+    return graph
+
+
+def two_ctrls():
+    """Return list of two different controllers."""
+    ctrls = []
+    c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])
+    c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'])
+    ctrls.append(c1)
+    ctrls.append(c2)
+    return ctrls
+
 ###############################################################################
 
 
 class TestSimulator(unittest.TestCase):
     """Unit tests for LinkBalancerSim class"""
-    graph = nx.DiGraph()
-    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
-    graph.add_nodes_from(['s1', 's2'], type='server')
-    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
-                          ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
-                          ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
-                          ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
-
+    graph = two_switch_topo()
+#    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
+#    graph.add_nodes_from(['s1', 's2'], type='server')
+#    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
+#                          ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
+#                          ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
+#                          ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
+#
     def test_zero_metric(self):
         """Assert that RMSE metric == 0 for varying link utils"""
         graph = self.graph
@@ -689,69 +782,6 @@ class TestController(unittest.TestCase):
         self.assertEqual(path_after, ['s2', 'sw2'])
 
 
-###############################################################################
-#TODO: The absence of these function will break both TestTwoSwitch and
-# TestController classes -- we should probably make them static class methods
-def one_switch_topo():
-    graph = nx.DiGraph()
-    graph.add_nodes_from(['sw1'], type='switch')
-    graph.add_nodes_from(['s1', 's2'], type='server')
-    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
-                          ['s2', 'sw1', {'capacity':100, 'used':0.0}]])
-    return graph
-
-def two_switch_topo():
-    graph = nx.DiGraph()
-    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
-    graph.add_nodes_from(['s1', 's2'], type='server')
-    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
-                          ['sw1', 'sw2', {'capacity':1001, 'used':0.0}],
-                          ['sw2', 'sw1', {'capacity':1001, 'used':0.0}],
-                          ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
-    return graph
-
-
-
-def two_switch_narrow_topo():
-    graph = nx.DiGraph()
-    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
-    graph.add_nodes_from(['s1', 's2'], type='server')
-    graph.add_edges_from([['s1', 'sw1', {'capacity':101, 'used':0.0}],
-                          ['sw1', 'sw2', {'capacity':10, 'used':0.0}],
-                          ['sw2', 'sw1', {'capacity':10, 'used':0.0}],
-                          ['s2', 'sw2', {'capacity':101, 'used':0.0}]])
-    return graph
-
-# Anja's topology suggestion to test for non-triviality of 'SW2'
-# decision on whom to send requests when not served by s2
-def three_switch_topo():
-    graph = nx.DiGraph()
-    graph.add_nodes_from(['sw1', 'sw2', 'sw3'], type='switch')
-    graph.add_nodes_from(['s1', 's2', 's3'], type='server')
-    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
-                          ['sw1', 'sw2', {'capacity':50, 'used':0.0}],
-                          ['sw2', 'sw1', {'capacity':50, 'used':0.0}],
-                          ['sw2', 'sw3', {'capacity':50, 'used':0.0}],
-                          ['sw3', 'sw2', {'capacity':50, 'used':0.0}],
-                          ['s2', 'sw2', {'capacity':100, 'used':0.0}],
-                          ['s3', 'sw3', {'capacity':100, 'used':0.0}]])
-    return graph
-
-
-def two_ctrls():
-    """Return list of two different controllers."""
-    ctrls = []
-    c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])
-    c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'])
-    ctrls.append(c1)
-    ctrls.append(c2)
-    return ctrls
-
-
-def metrics_by_unit_timestep(metrics):
-    """ convert a list of (time,metric) tuples into a list of metrics """
-    for time, value in metrics:
-        pass
 
 ###############################################################################
 
