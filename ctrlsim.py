@@ -10,6 +10,7 @@ from math import sqrt
 import matplotlib.pyplot as plt
 import networkx as nx
 import os
+import unittest
 import sys
 import unittest
 from workload import *
@@ -62,18 +63,23 @@ class LinkBalancerCtrl(Controller):
     utilization over all visible links
     """
 
-    def __init__(self, sw=[], srv=[]):
+    def __init__(self, sw=[], srv=[], greedy=False, greedylimit=1):
         """
         self.graph: A copy of the simulation graph is given to each controller
         instance at the time of simulation initialization
-        self.mylinks: a list of links in the self.graph which are goverend by
+        self. mylinks: a list of links in the self.graph which are goverend by
         this controller
+        self.greedy: handle all requests within my domain
+        self.greedylimit: handle all requests within my domain until one of my
+        links' utilization would exceed this normalized utilization by handling it
         """
         self.switches = sw
         self.servers = srv
         self.graph = None
         self.mylinks = []
         self.name = ""
+        self.greedy = greedy
+        self.greedylimit = greedylimit
 
     def learn_my_links(self, simgraph):
         """
@@ -82,10 +88,9 @@ class LinkBalancerCtrl(Controller):
         links = simgraph.edges()
         for link in links:
             u, v = link[:2]
-            if not (v in self.switches or u in self.switches):
-                continue
-            self.graph[u][v]['valid'] = True
-            self.mylinks.append((u, v))
+            if (v in self.switches or u in self.switches):
+                self.graph[u][v]['valid'] = True
+                self.mylinks.append((u, v))
 
     def update_my_state(self, simgraph):
         """
@@ -117,56 +122,101 @@ class LinkBalancerCtrl(Controller):
             ctrl.graph[u][v]['valid'] = True
         #print "%s sync to %s" % (self.name, ctrl.name)
 
-    def handle_request(self, sw=None, util=0, duration=0):
+    def get_srv_paths(self, sw, graph):
+        """ 
+        Return a list of all paths from available servers to the entry
+        switch which can respond. We make the simplification that the path list
+        (routing) is known and static 
+        """
+        paths = []
+        avail_srvs = self.servers
+        for server in avail_srvs:
+            paths.append(nx.shortest_path(graph, server, sw))
+
+        return paths
+
+    def compute_path_metric(self, sw, path, util, time_now):
+        """
+        Return a pathmetric rating the utilization of the path pathmetric is a
+        real number in [0,1] which is the max (worst) of all linkmetrics for all
+        links in the path 
+        """
+        greedy = self.greedy
+        pathmetric = 1
+        linkmetrics = []
+        links = zip(path[:-1], path[1:])
+        # calculate available capacity for each link in path
+        for link in links:
+            u, v = link
+            # For links not governed by this controller or learned through
+            # synchronization with other controllers...
+            if not (self.graph[u][v].get('valid')):
+                # Don't consider this path until 
+                if greedy:
+                    return pathmetric
+                else:
+                    continue
+            used = self.graph[u][v]['used'] + util
+            capacity = self.graph[u][v]['capacity']
+            linkmetric = used / capacity
+            # If we would oversubscribe this link (or greedy: exceed our
+            # limit on a link), go to next path
+            if linkmetric > 1:
+                print >> sys.stderr, "[%s] OVERSUBSCRIBED [%f] at switch %s" % (str(time_now), linkmetric,  str(sw))
+                break
+            elif (greedy and linkmetric >= self.greedylimit):
+                print >> sys.stderr, "[%s] OVER MY LIMIT [%f] at switch %s" % (str(time_now), self.greedylimit,  str(sw))
+                print path
+                break 
+            else:
+                linkmetrics.append(linkmetric)
+
+        # We define pathmetric to be the worst link metric in path
+        if len(linkmetrics) > 0:
+            pathmetric = max(linkmetrics)
+
+        return pathmetric
+
+    def handle_request(self, sw=None, util=0, duration=0, time_now=None):
         """
         Given a request that utilizes some bandwidth for a duration, map
         that request to an available path such that max link bandwidth util is
         minimized
+        sw: switch at which request arrives
+        util: link utilization to be consumed by this flow
+        duration: time over which flow consumes resources
+        greedy: Assign all flows to servers in my domain
         @return the chosen best path as a list of consecutive link pairs
          ((c1,sw1), (sw1,sw2),...,(sw_n, srv_x))
         """
-        #1 get path list: from entry sw to available servers which can respond
-        paths = []
-        avail_srvs = self.servers
-        for server in avail_srvs:
-            paths.append(nx.shortest_path(self.graph, server, sw))
+        greedy = self.greedy
 
-        #2 choose the path which mins the max link utilization
+        #1 Get available paths from servers to switch
+        paths = self.get_srv_paths(sw, self.graph)
+
+        #2 choose the path which mins the max link utilization for all links
+        # along the path
         bestpath = None
+        # Paths whose link utils we don't know and thus shouldn't consider when
+        # mapping this flow to a path
+        dontconsiderpaths = []  
         bestpathmetric = 1      # [0,1] lower -> better path
         for path in paths:
-            linkmetrics = []
-            links = zip(path[:-1], path[1:])
-            # calculate available capacity for each link in path
-            for link in links:
-                u, v = link
-                # exclude links not governed by this controller
-                # or synced from other controllers
-                #if not (v in self.switches or u in self.switches):
-                if not (self.graph[u][v].get('valid')):
-                    #print "%s skipping link %s" % (str(self), str(link))
-                    continue
-                used = self.graph[u][v]["used"] + util
-                capacity = self.graph[u][v]["capacity"]
-                linkmetric = used / capacity
-                #print "LinkMetric: " + str(linkmetric)
-                # If we've oversubscribed a link, go to next path
-                if linkmetric > 1:
-                    print >> sys.stderr, "OVERSUBSCRIBED at switch " + str(sw)
-                    next
-                else:
-                    linkmetrics.append(linkmetric)
-
-            # We define pathmetric to be the worst link metric in path
-            # we can redefine this to be average or wt. avg
-            pathmetric = max(linkmetrics)
-
+            pathmetric = self.compute_path_metric(sw, path, util, time_now)
             if pathmetric < bestpathmetric:
+                assert pathmetric != None
                 bestpath = path
                 bestpathmetric = pathmetric
+            else:
+                dontconsiderpaths.append(path)
 
-        #print >> sys.stderr, "DEBUG: " + str(self
-        #    ) + " choosing best path: " + str(bestpath) + str(linkmetrics)
+        # All of our valid links were either oversubscribed or utilized above
+        # our greedy limit, so we'll just select a uniform random invalid path
+        # to get the request out of our controller domain
+        if (greedy and bestpath == None):
+            print >> sys.stderr, "No best paths, so using randomly chosen path we shouldn't consider" + str(sw)
+            bestpath = choice(dontconsiderpaths)
+
         return bestpath
 
 
@@ -381,9 +431,7 @@ class LinkBalancerSim(Simulation):
             sync_period of 0 means "Sync between every flow arrival"
         step_size: amount of time to step forward on each iteration of
             simulation metrics computation
-
         time_now: time at which metrics are collected for the graph's state
-
         """
         all_metrics = {}
         for fcn in self.metric_fcns:
@@ -407,14 +455,14 @@ class LinkBalancerSim(Simulation):
                     ctrl.update_my_state(self.graph)
                 # Check if sync is necessary
                 time_elapsed_since_sync = arr_time - last_sync
-                if (time_elapsed_since_sync >= sync_period):
+                if ((sync_period != None) and time_elapsed_since_sync >= sync_period):
                     self.sync_ctrls()
                     if sync_period > 0:
                         last_sync = arr_time - (time_elapsed_since_sync % sync_period)
 
                 # Allocate resrouces
                 ctrl = self.sw_to_ctrl[sw]
-                path = ctrl.handle_request(sw, size, duration)
+                path = ctrl.handle_request(sw, size, duration, arr_time)
                 self.allocate_resources(path, size, duration + arr_time)
                
 
@@ -449,35 +497,15 @@ class LinkBalancerSim(Simulation):
             time_now += step_size
 
         return all_metrics
-###########################################
-#        last_sync = 0
-#        for request in workload:
-#            time_now, sw, size, duration = request
-#            # Free link resources from flows that have ended by now
-#            self.free_resources(time_now)
-#            # Let every controller learn its state from the topology
-#            for ctrl in self.ctrls:
-#                ctrl.update_my_state(self.graph)
-#            if (sync_period >= 0  and (time_now - last_sync) >= sync_period):
-#                self.sync_ctrls()
-#                last_sync = time_now
-#
-#            ctrl = self.sw_to_ctrl[sw]
-#            path = ctrl.handle_request(sw, size, duration)
-#            self.allocate_resources(path, size, duration + time_now)
-
-            # Compute metric(s) for this timestep
 
     def run_and_trace(self, name, workload, old=False, sync_period=0,
                       step_size=1, ignore_remaining=False):
         """
         Run and produce a log of the simulation for each timestep
-        Also, convert an old format workload to new format if old=TRUE
+        Convert an old format workload to new format if old=TRUE
         
         Dump the metrics, workload, and (if old-format) the converted
         new-format workload to JSON as files
-
-        Return the metrics
         """
         filename = 'logs/' + name 
         dir = os.path.dirname(filename)
@@ -491,7 +519,7 @@ class LinkBalancerSim(Simulation):
         f.close()
 
         if (old):
-            # Document the converted old_to_new network graph
+            # log the converted old_to_new network graph
             workload = old_to_new(workload) 
             f = open(filename + '.newworkload', 'w')
             print >>f, json.dumps(workload,sort_keys=True, indent=4)
@@ -506,13 +534,11 @@ class LinkBalancerSim(Simulation):
         print >>f, json.dumps(metrics, sort_keys=True, indent=4)
         f.close()
 
-
-        # Document the network graph
-        #TODO: Adds a good 10 seconds to the test runs
+        # log the network graph if not already drawn
         try:
             os.stat(filename + ".pdf")
         except:
-            nx.draw(self.graph)
+            nx.draw_spring(self.graph)
             plt.savefig(filename + ".pdf")
             plt.close()
             
@@ -532,6 +558,8 @@ class LinkBalancerSim(Simulation):
 # Test helper functions
 ###############################################################################
 
+#TODO @DAN: specific switch-to-ctrl governance in the graph
+
 def one_switch_topo():
     graph = nx.DiGraph()
     graph.add_nodes_from(['sw1'], type='switch')
@@ -549,8 +577,6 @@ def two_switch_topo():
                           ['sw2', 'sw1', {'capacity':1001, 'used':0.0}],
                           ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
     return graph
-
-
 
 def two_switch_narrow_topo():
     graph = nx.DiGraph()
@@ -578,14 +604,45 @@ def three_switch_topo():
     return graph
 
 
-def two_ctrls():
+# Dan put this here to demonstrate corner cases of simulation logic
+def greedy_topo():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(['sw1', 'sw2', 'sw3', 'sw4'], type='switch')
+    graph.add_nodes_from(['s1a', 's1b', 's3', 's4'], type='server')
+    graph.add_edges_from([['s1a', 'sw1', {'capacity':100, 'used':0.0}],
+                          ['s1b', 'sw1', {'capacity':100, 'used':0.0}],
+                          ['sw1', 'sw2', {'capacity':50, 'used':0.0}],
+                          ['sw2', 'sw1', {'capacity':50, 'used':0.0}],
+                          ['sw2', 'sw3', {'capacity':50, 'used':0.0}],
+                          ['sw3', 'sw2', {'capacity':50, 'used':0.0}],
+                          ['sw3', 'sw4', {'capacity':50, 'used':0.0}],
+                          ['sw4', 'sw3', {'capacity':50, 'used':0.0}],
+                          ['s3', 'sw3', {'capacity':100, 'used':0.0}],
+                          ['s4', 'sw4', {'capacity':100, 'used':0.0}]])
+    return graph
+
+#TODO @Dan: Deprecate these _ctrls() by getting controllers into the
+#node-attributes of the graph
+def two_ctrls(greedy=False, greedylimit=1):
     """Return list of two different controllers."""
     ctrls = []
-    c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])
-    c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'])
+    c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'], greedy=greedy, greedylimit=greedylimit)
+    c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'], greedy=greedy, greedylimit=greedylimit)
     ctrls.append(c1)
     ctrls.append(c2)
     return ctrls
+
+def three_ctrls(greedy=False, greedylimit=1):
+    """Return list of three different controllers."""
+    ctrls = []
+    c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1a', 's1b', 's3'], greedy=greedy, greedylimit=greedylimit)
+    c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1a', 's1b', 's3'], greedy=greedy, greedylimit=greedylimit)
+    c3 = LinkBalancerCtrl(sw=['sw3'], srv=['s1a', 's1b', 's3'], greedy=greedy, greedylimit=greedylimit)
+    ctrls.append(c1)
+    ctrls.append(c2)
+    ctrls.append(c3)
+    return ctrls
+
 
 ###############################################################################
 
@@ -593,13 +650,7 @@ def two_ctrls():
 class TestSimulator(unittest.TestCase):
     """Unit tests for LinkBalancerSim class"""
     graph = two_switch_topo()
-#    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
-#    graph.add_nodes_from(['s1', 's2'], type='server')
-#    graph.add_edges_from([['s1', 'sw1', {'capacity':100, 'used':0.0}],
-#                          ['sw1', 'sw2', {'capacity':1000, 'used':0.0}],
-#                          ['sw2', 'sw1', {'capacity':1000, 'used':0.0}],
-#                          ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
-#
+
     def test_zero_metric(self):
         """Assert that RMSE metric == 0 for varying link utils"""
         graph = self.graph

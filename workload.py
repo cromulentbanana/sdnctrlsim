@@ -194,6 +194,5 @@ class TestWaveWorkload(unittest.TestCase):
         test_wave = [st_fcn(i) for i in range(period + 1)]
         assertListsAlmostEqual(self, test_wave, [0, 1, 2, 1, 0])
 
-
 if __name__ == '__main__':
     unittest.main()
