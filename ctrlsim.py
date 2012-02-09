@@ -23,8 +23,60 @@ def sum_grouped_by(fnc, iterable):
         res[key] = res.get(key, 0) + val
     return res
 
+class ResourceAllocater(object):
 
-class Controller(object):
+    def allocate_resources(self, path=[], resources=0, whenfree=0):
+        """
+        Add resources used for each link in path 
+        graph: the graph to which we allocate flow resources
+        whenfree: The time at which the resources should be freed
+        flowlist: A list (heapq) of paths and resource consumption to free,
+        ordered by whenfree
+        Detect if any link in a path is fully utilized, do not oversubscribe
+        Record the resources for link to be freed at time <whenfree>
+        """
+        graph = self.graph
+        flowlist = self.active_flows
+
+        assert (len(path) > 0) 
+
+        links = zip(path[:-1], path[1:])
+        for src, dst in links:
+            edge = graph.edge[src][dst]
+            if (edge['used'] + resources > edge['capacity']):
+                return
+
+        for src, dst in links:
+            edge = graph.edge[src][dst]
+            edge['used'] += resources
+
+        heapq.heappush(flowlist, (whenfree, path, resources))
+
+
+    def free_resources(self, now):
+        """
+        Free resources along path for each link for whom some flows have
+        expired prior to- or now
+        graph: by default, free resources from the simulation graph
+        flowlist: a list of active flows in the graph
+        """
+        graph = self.graph
+        flowlist = self.active_flows
+
+        while (len(flowlist) > 0 and flowlist[0][0] <= now):
+            time, path, resources = heapq.heappop(flowlist)
+            links = zip(path[:-1], path[1:])
+            for src, dst in links:
+                newutil = graph.edge[src][dst]['used'] - resources
+                # If we are properly allocating resources, we should never free
+                # more resources than were ever used
+                assert (newutil >= 0)
+                graph.edge[src][dst]['used'] = max(0.0, newutil)
+
+
+
+
+class Controller(ResourceAllocater):
     """
     Generic controller -- does not implement control logic:
     """
@@ -220,7 +272,7 @@ class LinkBalancerCtrl(Controller):
         return bestpath
 
 
-class Simulation(object):
+class Simulation(ResourceAllocater):
     """
     Assign switches to controllers in the graph, and run the workload through
     the switches, controllers
@@ -369,38 +421,38 @@ class LinkBalancerSim(Simulation):
 
         return sqrt(sum(values))
 
-    def allocate_resources(self, path=[], resources=0, whenfree=0):
-        """
-        Subtract resources for each link in path (add to self.used[src][dst])
-        Detect if any link in a path is fully utilized, do not oversubscribe
-        Record the resources for link to be freed at time <whenfree>
-        """
-        if not (path):
-            return
-        links = zip(path[:-1], path[1:])
-        for src, dst in links:
-            edge = self.graph.edge[src][dst]
-            if (edge['used'] + resources > edge['capacity']):
-                return
+#    def allocate_resources(self, path=[], resources=0, whenfree=0):
+#        """
+#        Subtract resources for each link in path (add to self.used[src][dst])
+#        Detect if any link in a path is fully utilized, do not oversubscribe
+#        Record the resources for link to be freed at time <whenfree>
+#        """
+#        if not (path):
+#            return
+#        links = zip(path[:-1], path[1:])
+#        for src, dst in links:
+#            edge = self.graph.edge[src][dst]
+#            if (edge['used'] + resources > edge['capacity']):
+#                return
+#
+#        for src, dst in links:
+#            edge = self.graph.edge[src][dst]
+#            edge['used'] += resources
+#
+#        heapq.heappush(self.active_flows, (whenfree, path, resources))
 
-        for src, dst in links:
-            edge = self.graph.edge[src][dst]
-            edge['used'] += resources
-
-        heapq.heappush(self.active_flows, (whenfree, path, resources))
-
-    def free_resources(self, now):
-        """
-        Free (put back) resources along path for each link
-        for whom some flows have expired prior to now
-        """
-        aflows = self.active_flows
-        while (len(aflows) > 0 and aflows[0][0] <= now):
-            time, path, resources = heapq.heappop(aflows)
-            links = zip(path[:-1], path[1:])
-            for src, dst in links:
-                used = self.graph.edge[src][dst]['used']
-                self.graph.edge[src][dst]['used'] -= resources
+#    def free_resources(self, now):
+#        """
+#        Free (put back) resources along path for each link
+#        for whom some flows have expired prior to now
+#        """
+#        aflows = self.active_flows
+#        while (len(aflows) > 0 and aflows[0][0] <= now):
+#            time, path, resources = heapq.heappop(aflows)
+#            links = zip(path[:-1], path[1:])
+#            for src, dst in links:
+#                used = self.graph.edge[src][dst]['used']
+#                self.graph.edge[src][dst]['used'] -= resources
 
     def sync_ctrls(self, ctrls=None):
         """
