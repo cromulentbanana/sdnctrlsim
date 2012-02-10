@@ -10,6 +10,27 @@ from workload import *
 parser = argparse.ArgumentParser()
 args = parser.parse_args()
 
+
+def test_two_ctrl_sawtooth_inphase(max_demand=8):
+    """For in-phase sawtooth with 2 synced ctrls, ensure server RMSE == 0."""
+    period = 8 
+    timesteps = period * 2
+    workload = dual_offset_workload(switches=['sw1', 'sw2'],
+                                    period=period, offset=0,
+                                    max_demand=max_demand, size=1,
+                                    duration=1, timesteps=timesteps,
+                                    workload_fcn=sawtooth)
+
+    ctrls = two_ctrls()
+    sim = LinkBalancerSim(two_switch_topo(), ctrls)
+    myname = sys._getframe().f_code.co_name
+    metrics = sim.run_and_trace(myname, workload, old=True,
+                                sync_period=timesteps, show_graph=True)
+    for metric_val in metrics['rmse_servers']:
+        self.assertAlmostEqual(metric_val, 0.0)
+
+test_two_ctrl_sawtooth_inphase()
+
 def showcornercases():
     period=2
     max_demand = 2
