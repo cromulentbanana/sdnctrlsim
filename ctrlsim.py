@@ -325,6 +325,34 @@ class Simulation(ResourceAllocater):
         return None
 
 
+def partway_along_line(one, two, dist=0.75):
+    """Return point that is partway between two points.
+
+    one/two: (x,y) point pairs
+    dist: fraction of distance in [0,1]
+    """
+    x = one[0] + ((two[0] - one[0]) * dist)
+    y = one[1] + ((two[1] - one[1]) * dist)
+    return (x, y)
+
+
+def show_graph_status(g, pos):
+    """Show graph, labels, and edge data on the screen."""
+    plt.clf()
+    plt.axis('off')
+    nx.draw_networkx_nodes(g, pos, node_size=50)
+    edge_color = 'r'
+    for src, dst in g.edges():
+        nx.draw_networkx_edges(g, pos, [(src, dst)], width=1,
+                               edge_color=edge_color)
+    nx.draw_networkx_labels(g, pos, font_size=20, font_family='sans-serif')
+    for src, dst in g.edges():
+        x, y = partway_along_line(pos[src], pos[dst])
+        plt.text(x, y, g[src][dst], horizontalalignment='left')
+
+    plt.show()
+
+
 class LinkBalancerSim(Simulation):
     """
     Simulation in which each controller balances link utilization according to
@@ -442,7 +470,8 @@ class LinkBalancerSim(Simulation):
                 continue
             a.sync_toward(b)
 
-    def run(self, workload, sync_period=0, step_size=1, ignore_remaining=False):
+    def run(self, workload, sync_period=0, step_size=1, ignore_remaining=False,
+            show_graph=False):
         """
         Run the full simulation with new workload definition
 
@@ -461,6 +490,10 @@ class LinkBalancerSim(Simulation):
         arr_time = 0
         last_sync = 0
         debugcounter = 0
+
+        # Store positions so each run step is displayed consistently.
+        # pos is a dict from node names to (x, y) pairs in [0, 1].
+        pos = nx.spring_layout(self.graph)
 
         # Step forward through time until our workload is exhausted
         while (len(workload) > 0):
@@ -510,6 +543,11 @@ class LinkBalancerSim(Simulation):
                 all_metrics[fcn.__name__].append(fcn(self.graph,
                                                      time_step=time_now,
                                                      new_reqs=new_reqs))
+
+            if show_graph:
+                show_graph_status(self.graph, pos)
+                raw_input("At time %s. Press enter to continue." % time_now)
+
             time_now += step_size
             
         if (ignore_remaining):
@@ -532,7 +570,7 @@ class LinkBalancerSim(Simulation):
         return all_metrics
 
     def run_and_trace(self, name, workload, old=False, sync_period=0,
-                      step_size=1, ignore_remaining=False):
+                      step_size=1, ignore_remaining=False, show_graph=False):
         """
         Run and produce a log of the simulation for each timestep
         Convert an old format workload to new format if old=TRUE
@@ -558,10 +596,10 @@ class LinkBalancerSim(Simulation):
             print >>f, json.dumps(workload,sort_keys=True, indent=4)
             f.close()
             metrics = self.run(workload, sync_period, step_size,
-                               ignore_remaining)
+                               ignore_remaining, show_graph=show_graph)
         else:
             metrics = self.run(workload, sync_period, step_size,
-                               ignore_remaining)
+                               ignore_remaining, show_graph=show_graph)
 
         f = open(filename + '.metrics', 'w')
         print >>f, json.dumps(metrics, sort_keys=True, indent=4)
