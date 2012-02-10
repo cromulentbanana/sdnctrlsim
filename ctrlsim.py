@@ -205,6 +205,8 @@ class LinkBalancerCtrl(Controller):
         # calculate available capacity for each link in path
         for link in links:
             u, v = link
+#            if not (self.graph[u][v].get('mylink')):
+#                continue
             used = self.graph[u][v]['used'] + util
             capacity = self.graph[u][v]['capacity']
             linkmetric = float(used) / capacity
@@ -224,8 +226,9 @@ class LinkBalancerCtrl(Controller):
         if len(linkmetrics) > 0:
             pathmetric = max(linkmetrics)
 
-        #print "DEBUG PM " + str(self) + str((path, linkmetrics))
-        return pathmetric
+        if (time_now > 0):
+            print str(time_now) + " DEBUG PM " + str(self) + str((path, linkmetrics))
+        return (pathmetric, len(links))
 
     def handle_request(self, sw=None, util=0, duration=0, time_now=None):
         """
@@ -254,19 +257,34 @@ class LinkBalancerCtrl(Controller):
         # along the path
         bestpath = None
         bestpathmetric = None # [0,1] lower -> better path
+        bestpathlen = None #lower -> better path
         for path in paths:
-            pathmetric = self.compute_path_metric(sw, path, util, time_now)
+            pathmetric, pathlen = self.compute_path_metric(sw, path, util, time_now)
 
-            if (bestpathmetric == None or pathmetric < bestpathmetric):
-                bestpath = path
-                bestpathmetric = pathmetric
+            #DESIGN CHOICE: We pick the path with the best pathmetric.
+            # If multiple path metrics tie, we pick the path with the shortest
+            # length
+            if (bestpathmetric == None):
+                    bestpath = path
+                    bestpathmetric = pathmetric
+                    bestpathlen = pathlen
+            elif (pathmetric < bestpathmetric):
+                    bestpath = path
+                    bestpathmetric = pathmetric
+                    bestpathlen = pathlen
+            elif (pathmetric == bestpathmetric and pathlen < bestpathlen):
+                    bestpath = path
+                    bestpathmetric = pathmetric
+                    bestpathlen = pathlen
 
         self.allocate_resources(bestpath, util, duration)
 
 #DEBUG
-#        print "AFTER"
-#        for i in self.graph.edges(data=True):
-#            print i
+        print str(time_now) + " DEBUG HR " + str(self) + "" + str(bestpath) \
+        + " " + str(bestpathlen) + " " + str(bestpathmetric)
+        for i in self.graph.edges(data=True):
+            print i
+        print 
 #DEBUG
 
         return bestpath
@@ -335,8 +353,10 @@ def partway_along_line(one, two, dist=0.75):
     y = one[1] + ((two[1] - one[1]) * dist)
     return (x, y)
 
+def log_graph_status(g, pos, time):
+    show_graph_status(g, pos, time=time, save=True)
 
-def show_graph_status(g, pos):
+def show_graph_status(g, pos, time=None, save=False):
     """Show graph, labels, and edge data on the screen."""
     plt.clf()
     plt.axis('off')
@@ -350,7 +370,10 @@ def show_graph_status(g, pos):
         x, y = partway_along_line(pos[src], pos[dst])
         plt.text(x, y, g[src][dst], horizontalalignment='left')
 
-    plt.show()
+    if (save):
+        plt.savefig(str(time)+ ".pdf")
+    else:
+        plt.show()
 
 
 class LinkBalancerSim(Simulation):
@@ -544,9 +567,15 @@ class LinkBalancerSim(Simulation):
                                                      time_step=time_now,
                                                      new_reqs=new_reqs))
 
+                #log_graph_status(self.graph, pos, time_now)
             if show_graph:
                 show_graph_status(self.graph, pos)
                 raw_input("At time %s. Press enter to continue." % time_now)
+
+            print "SIMULATION:"
+            for i in self.graph.edges(data=True):
+                print i
+            print 
 
             time_now += step_size
             
@@ -952,7 +981,7 @@ class TestTwoSwitch(unittest.TestCase):
 
         ctrls = [LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])]
         sim = LinkBalancerSim(one_switch_topo(), ctrls)
-        metrics = sim.run_and_trace(myname, workload, sync_period=0, step_size=1, ignore_remaining=False)
+        metrics = sim.run_and_trace(myname, workload, sync_period=None, step_size=1, ignore_remaining=False)
 
         del metrics["simulation_trace"]
         # The first run will be unbalanced because there's only 1 flow
