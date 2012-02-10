@@ -25,7 +25,13 @@ def sum_grouped_by(fnc, iterable):
 
 class ResourceAllocater(object):
 
-    def allocate_resources(self, path=[], resources=0, whenfree=0):
+    def _update_last_now(self, now):
+        if hasattr(self, 'last_now'):
+            if self.last_now > now:
+                raise AssertionError("Time should progress monotonically (last now %d > now: %d)"  % (self.last_now, now))
+        self.last_now = now
+
+    def allocate_resources(self, path, resources, now, duration):
         """
         Add resources used for each link in path 
         graph: the graph to which we allocate flow resources
@@ -38,7 +44,10 @@ class ResourceAllocater(object):
         graph = self.graph
         flowlist = self.active_flows
 
-        assert (len(path) > 0) 
+        assert (len(path) > 0)
+        assert (duration > 0)
+        self._update_last_now(now)
+        whenfree = now + duration
 
         links = zip(path[:-1], path[1:])
         for src, dst in links:
@@ -62,6 +71,11 @@ class ResourceAllocater(object):
         """
         graph = self.graph
         flowlist = self.active_flows
+
+        if hasattr(self, "last_now") and self.last_now >= now and (len(flowlist) > 0 and flowlist[0][0] <= now):
+            raise AssertionError("flowlist[0][0]: %d now: %d" % (flowlist[0][0], now))
+
+        self.last_now = now
 
         while (len(flowlist) > 0 and flowlist[0][0] <= now):
             time, path, resources = heapq.heappop(flowlist)
@@ -277,7 +291,7 @@ class LinkBalancerCtrl(Controller):
                     bestpathmetric = pathmetric
                     bestpathlen = pathlen
 
-        self.allocate_resources(bestpath, util, duration)
+        self.allocate_resources(bestpath, util, time_now, duration)
 
 #DEBUG
         print str(time_now) + " DEBUG HR " + str(self) + "" + str(bestpath) \
@@ -551,8 +565,7 @@ class LinkBalancerSim(Simulation):
                 # Allocate resrouces
                 ctrl = self.sw_to_ctrl[sw]
                 path = ctrl.handle_request(sw, size, duration, arr_time)
-                self.allocate_resources(path, size, duration + arr_time)
-               
+                self.allocate_resources(path, size, arr_time, duration)
 
                 if len(workload) > 0:
                     arr_time = workload[0][0]
