@@ -181,6 +181,8 @@ class LinkBalancerCtrl(Controller):
         greedy: Assign all flows to servers in my domain
         @return the chosen best path as a list of consecutive link pairs
          ((c1,sw1), (sw1,sw2),...,(sw_n, srv_x))
+
+        TODO FIXME: It seems that greedy isn't actually implemented here?
         """
         greedy = self.greedy
 
