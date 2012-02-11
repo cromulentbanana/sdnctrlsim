@@ -87,6 +87,10 @@ def two_ctrls(greedy=False, greedylimit=1):
     ctrls.append(c2)
     return ctrls
 
+def strictly_local_ctrls(n=2):
+    """ Create a number of controllers that strictly only send traffic to one local server they know about """
+    return [ LinkBalancerCtrl(sw=["sw%d"%i], srv=["s%d"%i], greedy=True, greedylimit=1000) for i in range(1, 1+ n) ]
+
 def three_ctrls(greedy=False, greedylimit=1):
     """Return list of three different controllers."""
     ctrls = []

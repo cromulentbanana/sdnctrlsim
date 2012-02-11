@@ -197,7 +197,8 @@ class TestTwoSwitch(unittest.TestCase):
                                             duration=dur, timesteps=timesteps,
                                             workload_fcn=sawtooth)
 
-            ctrls = two_ctrls(greedy=True, greedylimit=1000)
+            ctrls = strictly_local_ctrls(2)
+
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             myname = sys._getframe().f_code.co_name + str(period)
             metrics = sim.run_and_trace(myname, workload, old=True,
@@ -250,7 +251,8 @@ class TestTwoSwitch(unittest.TestCase):
                                         duration=dur, timesteps=timesteps,
                                         workload_fcn=wave)
 
-        ctrls = two_ctrls()
+        ctrls = strictly_local_ctrls(2)
+
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
         myname = sys._getframe().f_code.co_name + str(period)
         metrics = sim.run_and_trace(myname, workload, old=True,
@@ -286,7 +288,7 @@ class TestTwoSwitch(unittest.TestCase):
                                                 size=1, duration=1,
                                                 timesteps=timesteps,
                                                 workload_fcn=workload_fcn)
-                ctrls = two_ctrls()
+                ctrls = strictly_local_ctrls()
                 sim = LinkBalancerSim(two_switch_topo(), ctrls)
                 myname = sys._getframe().f_code.co_name
                 metrics = sim.run_and_trace(myname, workload, old=True,
