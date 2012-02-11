@@ -13,7 +13,6 @@ import os
 import unittest
 import sys
 import unittest
-from workload import *
 
 from test_helper import *
 
@@ -198,7 +197,7 @@ class TestTwoSwitch(unittest.TestCase):
                                             duration=dur, timesteps=timesteps,
                                             workload_fcn=sawtooth)
 
-            ctrls = two_ctrls()
+            ctrls = two_ctrls(greedy=True, greedylimit=1000)
             sim = LinkBalancerSim(two_switch_topo(), ctrls)
             myname = sys._getframe().f_code.co_name + str(period)
             metrics = sim.run_and_trace(myname, workload, old=True,
@@ -206,6 +205,7 @@ class TestTwoSwitch(unittest.TestCase):
                                         ignore_remaining=True)
             self.assertEqual(len(metrics['rmse_servers']), timesteps)
             for i, metric_val in enumerate(metrics['rmse_servers']):
+                print "step: %d, metric_val=%d, period=%d" %(i, metric_val, period)
                 # When aligned with a sawtooth crossing, RMSE should be equal.
                 if i % (period / 2.0) == period / 4.0:
                     self.assertAlmostEqual(metric_val, 0.0)

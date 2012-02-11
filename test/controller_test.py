@@ -13,7 +13,6 @@ import os
 import unittest
 import sys
 import unittest
-from workload import *
 
 from test_helper import *
 
