@@ -170,7 +170,7 @@ class LinkBalancerCtrl(Controller):
             print str(time_now) + " DEBUG PM " + str(self) + str((path, linkmetrics))
         return (pathmetric, len(links))
 
-    def handle_request(self, sw=None, util=0, duration=0, time_now=None):
+    def handle_request(self, sw, util, duration, time_now):
         """
         Given a request that utilizes some bandwidth for a duration, map
         that request to an available path such that max link bandwidth util is
