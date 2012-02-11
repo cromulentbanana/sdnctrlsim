@@ -71,9 +71,9 @@ class SimulationTest(unittest.TestCase):
         metric_before_alloc = sim.rmse_links(graph)
         path = nx.shortest_path(graph, 's1', 'sw1')
 
-        sim.allocate_resources(path, 40, '5')
+        sim.allocate_resources(path, 40, 5, 1)
         metric_after_alloc = sim.rmse_links(graph)
-        sim.free_resources('5')
+        sim.free_resources(6)
         metric_after_free = sim.rmse_links(graph)
 
         self.assertEqual(metric_before_alloc, metric_after_free)
@@ -101,7 +101,7 @@ class SimulationTest(unittest.TestCase):
         for now, item in enumerate(workload):
             path, dur = item
             sim.free_resources(now)
-            sim.allocate_resources(path, 1, now + dur)
+            sim.allocate_resources(path, 1, now, dur)
 
         # Free the (up to max_duration) possibly remaining live flows
         for i in range(len(workload), steps + max_duration):
