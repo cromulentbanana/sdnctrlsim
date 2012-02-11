@@ -4,8 +4,9 @@
 
 
 import argparse
-from ctrlsim import *
-from workload import *
+from test.test_helper import *
+from sim.simulation import *
+from sim.workload import *
 
 parser = argparse.ArgumentParser()
 args = parser.parse_args()
