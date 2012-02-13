@@ -78,27 +78,15 @@ def greedy_topo():
                           ['s4', 'sw4', {'capacity':100, 'used':0.0}]])
     return graph
 
-def two_ctrls(greedy=False, greedylimit=1):
+def two_ctrls():
     """Return list of two different controllers."""
     ctrls = []
-    c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'], greedy=greedy, greedylimit=greedylimit)
-    c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'], greedy=greedy, greedylimit=greedylimit)
+    c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])
+    c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'])
     ctrls.append(c1)
     ctrls.append(c2)
     return ctrls
 
 def strictly_local_ctrls(n=2):
     """ Create a number of controllers that strictly only send traffic to one local server they know about """
-    return [ LinkBalancerCtrl(sw=["sw%d"%i], srv=["s%d"%i], greedy=True, greedylimit=1000) for i in range(1, 1+ n) ]
-
-def three_ctrls(greedy=False, greedylimit=1):
-    """Return list of three different controllers."""
-    ctrls = []
-    c1 = LinkBalancerCtrl(sw=['sw1'], srv=['s1a', 's1b', 's3'], greedy=greedy, greedylimit=greedylimit)
-    c2 = LinkBalancerCtrl(sw=['sw2'], srv=['s1a', 's1b', 's3'], greedy=greedy, greedylimit=greedylimit)
-    c3 = LinkBalancerCtrl(sw=['sw3'], srv=['s1a', 's1b', 's3'], greedy=greedy, greedylimit=greedylimit)
-    ctrls.append(c1)
-    ctrls.append(c2)
-    ctrls.append(c3)
-    return ctrls
-
+    return [ LinkBalancerCtrl(sw=["sw%d"%i], srv=["s%d"%i]) for i in range(1, 1+ n) ]

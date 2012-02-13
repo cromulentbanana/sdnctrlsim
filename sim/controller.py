@@ -55,14 +55,12 @@ class LinkBalancerCtrl(Controller):
     utilization over all visible links
     """
 
-    def __init__(self, sw=[], srv=[], greedy=False, greedylimit=1):
+    def __init__(self, sw=[], srv=[]):
         """
         self.graph: A copy of the simulation graph is given to each controller
         instance at the time of simulation initialization
         self. mylinks: a list of links in the self.graph which are goverend by
         this controller
-        self.greedy: handle all requests within my domain
-        self.greedylimit: handle all requests within my domain until one of my
         links' utilization would exceed this normalized utilization by handling it
         """
         self.switches = sw
@@ -71,8 +69,6 @@ class LinkBalancerCtrl(Controller):
         self.mylinks = []
         self.name = ""
         self.active_flows = []
-        self.greedy = greedy
-        self.greedylimit = greedylimit
 
     def learn_my_links(self, simgraph):
         """
@@ -138,7 +134,6 @@ class LinkBalancerCtrl(Controller):
         real number in [0,1] which is the max (worst) of all linkmetrics for all
         links in the path 
         """
-        greedy = self.greedy
         pathmetric = 1
         linkmetrics = []
         links = zip(path[:-1], path[1:])
@@ -150,15 +145,10 @@ class LinkBalancerCtrl(Controller):
             used = self.graph[u][v]['used'] + util
             capacity = self.graph[u][v]['capacity']
             linkmetric = float(used) / capacity
-            # If we would oversubscribe this link (or greedy: exceed our
-            # limit on a link), go to next path
+            # If we would oversubscribe this link
             if linkmetric > 1:
                 print >> sys.stderr, "[%s] OVERSUBSCRIBED [%f] at switch %s" % (str(time_now), linkmetric,  str(sw))
                 break
-            elif (greedy and linkmetric >= self.greedylimit):
-                print >> sys.stderr, "[%s] OVER MY LIMIT [%f] at switch %s" % (str(time_now), self.greedylimit,  str(sw))
-                print path
-                break 
             else:
                 linkmetrics.append(linkmetric)
 
@@ -178,13 +168,9 @@ class LinkBalancerCtrl(Controller):
         sw: switch at which request arrives
         util: link utilization to be consumed by this flow
         duration: time over which flow consumes resources
-        greedy: Assign all flows to servers in my domain
         @return the chosen best path as a list of consecutive link pairs
          ((c1,sw1), (sw1,sw2),...,(sw_n, srv_x))
-
-        TODO FIXME: It seems that greedy isn't actually implemented here?
         """
-        greedy = self.greedy
 
 #DEBUG
 #        print "DEBUG BEFORE"
@@ -230,4 +216,3 @@ class LinkBalancerCtrl(Controller):
 #DEBUG
 
         return bestpath
-

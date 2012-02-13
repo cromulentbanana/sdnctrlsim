@@ -2,11 +2,11 @@
 #
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 
-
 import argparse
 from test.test_helper import *
 from sim.simulation import *
 from sim.workload import *
+
 
 parser = argparse.ArgumentParser()
 args = parser.parse_args()
@@ -100,7 +100,7 @@ def test_two_ctrl_wave_outofphase(sync_period=None, greedy=False, greedylimit=1)
                                         duration=dur, timesteps=timesteps,
                                         workload_fcn=wave)
 
-        ctrls = two_ctrls(greedy, (1.0/greedylimit))
+        ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
         if (greedy):
             myname = "runsim.greedy."
@@ -108,7 +108,6 @@ def test_two_ctrl_wave_outofphase(sync_period=None, greedy=False, greedylimit=1)
         else:
             myname = "runsim."
         myname +=  str(period) + "." + str(sync_period)
-
 
         sim.run_and_trace(myname, workload, old=True,
                                     sync_period=sync_period,
