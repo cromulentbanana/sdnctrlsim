@@ -284,7 +284,12 @@ class LinkBalancerSim(Simulation):
                 # Allocate resrouces
                 ctrl = self.sw_to_ctrl[sw]
                 path = ctrl.handle_request(sw, util, duration, arr_time)
-                self.allocate_resources(path, util, arr_time, duration)
+                if len(path) > 0: 
+                    self.allocate_resources(path, util, arr_time, duration)
+                else:
+                    pass
+                    #TODO log the fact that no path could be allocated to
+                    #handle this request
 
                 if len(workload) > 0:
                     arr_time = workload[0][0]

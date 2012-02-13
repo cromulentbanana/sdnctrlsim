@@ -160,29 +160,7 @@ class LinkBalancerCtrl(Controller):
             print str(time_now) + " DEBUG PM " + str(self) + str((path, linkmetrics))
         return (pathmetric, len(links))
 
-    def handle_request(self, sw, util, duration, time_now):
-        """
-        Given a request that utilizes some bandwidth for a duration, map
-        that request to an available path such that max link bandwidth util is
-        minimized
-        sw: switch at which request arrives
-        util: link utilization to be consumed by this flow
-        duration: time over which flow consumes resources
-        @return the chosen best path as a list of consecutive link pairs
-         ((c1,sw1), (sw1,sw2),...,(sw_n, srv_x))
-        """
-
-#DEBUG
-#        print "DEBUG BEFORE"
-#        for i in self.graph.edges(data=True):
-#            print i
-#DEBUG
-
-        #1 Get available paths from servers to switch
-        paths = self.get_srv_paths(sw, self.graph)
-
-        #2 choose the path which mins the max link utilization for all links
-        # along the path
+    def find_best_path(self, paths, sw, util, duration, time_now):
         bestpath = None
         bestpathmetric = None # [0,1] lower -> better path
         bestpathlen = None #lower -> better path
@@ -205,14 +183,45 @@ class LinkBalancerCtrl(Controller):
                     bestpathmetric = pathmetric
                     bestpathlen = pathlen
 
-        self.allocate_resources(bestpath, util, time_now, duration)
+        if (bestpath == None):
+            return None
 
-#DEBUG
-        print str(time_now) + " DEBUG HR " + str(self) + "" + str(bestpath) \
-        + " " + str(bestpathlen) + " " + str(bestpathmetric)
-        for i in self.graph.edges(data=True):
-            print i
-        print 
-#DEBUG
+        #DEBUG
+        #print str(time_now) + " DEBUG HR " + str(self) + "" + str(bestpath) \
+        #+ " " + str(bestpathlen) + " " + str(bestpathmetric)
+        #for i in self.graph.edges(data=True):
+        #    print i
+        #print 
+        return (bestpath, bestpathmetric)
 
+    def handle_request(self, sw, util, duration, time_now):
+        """
+        Given a request that utilizes some bandwidth for a duration, map
+        that request to an available path such that max link bandwidth util is
+        minimized
+        sw: switch at which request arrives
+        util: link utilization to be consumed by this flow
+        duration: time over which flow consumes resources
+        @return the chosen best path as a list of consecutive link pairs
+         ((c1,sw1), (sw1,sw2),...,(sw_n, srv_x))
+        """
+        #DEBUG
+        #print "DEBUG BEFORE"
+        #for i in self.graph.edges(data=True):
+        #    print i
+
+        #1 Get available paths from servers to switch
+        paths = self.get_srv_paths(sw, self.graph)
+
+        #2 choose the path which mins the max link utilization for all links
+        # along the path
+        bestpath, bestpm = self.find_best_path(paths, sw, util, duration, time_now)
+
+        if len(bestpath) > 0: 
+            self.allocate_resources(bestpath, util, time_now, duration)
+        else:
+            pass
+            #TODO log the fact that no path could be allocated to
+            #handle this request
+            
         return bestpath
