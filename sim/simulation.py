@@ -253,11 +253,11 @@ class LinkBalancerSim(Simulation):
 
         # Step forward through time until our workload is exhausted
         while (len(workload) > 0):
-            arr_time, sw, size, duration = workload[0]
+            arr_time, sw, util, duration = workload[0]
             new_reqs = []
 
             while (arr_time <= time_now and len(workload) > 0):
-                arr_time, sw, size, duration = workload.pop(0)
+                arr_time, sw, util, duration = workload.pop(0)
 #DEBUG
 #                foo = workload.pop(0)
 #                print 
@@ -266,7 +266,7 @@ class LinkBalancerSim(Simulation):
 #                    print i
 #                print 
 #                debugcounter += 1
-#                arr_time, sw, size, duration = foo
+#                arr_time, sw, util, duration = foo
 #DEBUG
                 # Free all resources that ended before or at arr_time
                 self.free_resources(arr_time)
@@ -283,12 +283,12 @@ class LinkBalancerSim(Simulation):
 
                 # Allocate resrouces
                 ctrl = self.sw_to_ctrl[sw]
-                path = ctrl.handle_request(sw, size, duration, arr_time)
-                self.allocate_resources(path, size, arr_time, duration)
+                path = ctrl.handle_request(sw, util, duration, arr_time)
+                self.allocate_resources(path, util, arr_time, duration)
 
                 if len(workload) > 0:
                     arr_time = workload[0][0]
-                    new_reqs.append([sw, size, duration])
+                    new_reqs.append([sw, util, duration])
                 else:
                     arr_time=time_now
                     self.free_resources(arr_time)
