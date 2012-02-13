@@ -242,10 +242,34 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
     def __init__(self, greedylimit, *args, **kwargs):
         super(GreedyLinkBalancerCtrl, self).__init__(*args, **kwargs)
         self.greedylimit = greedylimit
+        self.localservers = None
+
+    def learn_local_servers(self):
+        """
+        Learn the servers of the sim graph that are within my domain
+        """
+        assert len(self.mylinks) > 0
+        assert len(self.switches) > 0
+        assert self.graph != None
+
+        for srv in self.graph.servers:
+            neighbor_sw = simgraph.neighbors(srv)
+            if len(neighbor_sw) != 1:
+                raise NotImplementedError("Single server links only")
+            if (neighbor_sw in self.switches):
+                self.localservers.append(srv)
+
 
     def get_local_srv_paths(self, switch, graph):
         """Return only paths to servers within this controller's domain"""
-        raise NotImplementedError("Need a list of paths in this controller's domain")
+
+        paths = []
+        avail_srvs = self.localservers
+        for server in avail_srvs:
+            paths.append(nx.shortest_path(graph, server, sw))
+
+        return paths
+
 
     def handle_request(self, sw, util, duration, time_now):
         #Find a best path to a server in our domain

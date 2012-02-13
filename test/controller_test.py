@@ -153,7 +153,14 @@ class TestController(unittest.TestCase):
         ctrl = GreedyLinkBalancerCtrl(greedylimit=mylimit)
         self.assertEqual(ctrl.greedylimit, mylimit)
 
+    def test_greedy_learns_local_servers(self):
+        """Assert controller learns which servers of the graph are
+        inside its domain"""
 
+        mylimit = 0.5
+        ctrl = GreedyLinkBalancerCtrl(greedylimit=mylimit)
+        #ctrl.learn_local_servers()
+        #TODO 
 
 
     def test_greedy_handle_request_with_limit_0(self):
