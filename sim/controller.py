@@ -225,3 +225,51 @@ class LinkBalancerCtrl(Controller):
             #handle this request
             
         return bestpath
+
+
+class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
+    """
+    A Greedy variant of the LinkBalancerCtrl which assigns all flows only to
+    servers in its own domain (local) until doing so would require the pathmetric to
+    exceed the greedylimit. Only when it is impossible to assign a flow to a
+    local server without the pathmetric exceeding the greedylimit, is the
+    controller allowed to send it to a server out of the domain.
+
+    greedylimit: A value between [0,1]. A greedylimit of 1 means keep all flows
+    in our domain until doing so would oversubscribe a link.
+    """
+
+    def __init__(self, greedylimit, *args, **kwargs):
+        super(GreedyLinkBalancerCtrl, self).__init__(*args, **kwargs)
+        self.greedylimit = greedylimit
+
+    def get_local_srv_paths(self, switch, graph):
+        """Return only paths to servers within this controller's domain"""
+        raise NotImplementedError("Need a list of paths in this controller's domain")
+
+    def handle_request(self, sw, util, duration, time_now):
+        #Find a best path to a server in our domain
+        paths = self.get_local_srv_paths(sw, self.graph)
+        bestpath, bestpm = self.find_best_path(paths, sw, util, duration, time_now)
+
+        if (bestpm > greedylimit):
+            oldbestpath = bestpath
+            oldbestpm = bestpm
+
+        #If the best path in our domain violates our greedy limit, find a
+        # best path to a server outside our domain
+        if (bestpath == None or bestpm > greedylimit):
+            paths = self.get_srv_paths(sw, self.graph)
+            bestpath, bestpm = find_best_path(paths, sw, util, duration, time_now)
+
+        #DESIGN DECISION: If the bestpm has a worse pathmetric 
+        # than the oldbestpm, should we return oldbestpath instead?
+
+        if len(bestpath) > 0: 
+            self.allocate_resources(bestpath, util, time_now, duration)
+        else:
+            pass
+            #TODO log the fact that no path could be allocated to
+            #handle this request
+
+        return bestpath

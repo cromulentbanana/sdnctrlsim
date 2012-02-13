@@ -142,5 +142,36 @@ class TestController(unittest.TestCase):
         path_after = b.handle_request('sw2', 1, 1, 1)
         self.assertEqual(path_after, ['s2', 'sw2'])
 
+    def test_instantiate_greedy_controller(self):
+        """Assert that a greedy controller's handle_request method will handle
+        all requests outside of its own domain with greedylimit 0
+        """
+        # Basic sanity checks
+        self.assertRaises(TypeError, GreedyLinkBalancerCtrl)
+
+        mylimit = 0.5
+        ctrl = GreedyLinkBalancerCtrl(greedylimit=mylimit)
+        self.assertEqual(ctrl.greedylimit, mylimit)
+
+
+
+
+    def test_greedy_handle_request_with_limit_0(self):
+        """Assert that a greedy controller's handle_request method will handle
+        all requests outside of its own domain with greedylimit 0"""
+        pass
+
+    def test_greedy_handle_request_with_limit_1(self):
+        """Assert that a greedy controller's handle_request method will handle
+        all requests inside of its own domain with greedylimit 1"""
+        pass
+
+    def test_greedy_handle_request_with_limit_exceeded(self):
+        """Assert that a greedy controller's handle_request method will handle
+        all requests inside of its own domain, until allocating a flow anywhere
+        in its domain would cause the link util to the greedylimit"""
+        pass
+
+
 if __name__ == '__main__':
     unittest.main()
