@@ -25,12 +25,22 @@ class Controller(ResourceAllocater):
         sw: list of switch names governed by this controller
         srv: list of servers known by this controller
         to which requests may be dispatched sent
-        graph: full graph data, with capacities and utilization
+        graph: A copy of the simulation graph is given to each controller
+        instance at the time of simulation initialization
+        name: string representation, should be unique in a simulation
+        mylinks: a list of links in the self.graph which are goverend by
+        this controller, inferred from switches
+        active_flows: used to track the (timeout, path) of all active flows
         """
         self.switches = sw
         self.servers = srv
         self.graph = graph
         self.name = name
+
+        self.active_flows = []
+        # Inferred from graph
+        self.localservers = []
+        self.mylinks = []
 
     def __str__(self):
         return "Controller %s of: %s" % (self.name, str(self.switches))
@@ -38,14 +48,17 @@ class Controller(ResourceAllocater):
     def set_name(self, name):
         self.name = name
 
+    def set_graph(self, graph):
+        self.name = graph
+
     def get_switches(self):
         return self.switches
 
     def handle_request(self):
-        pass
+        raise NotImplementedError("Controller does not implement __name__")
 
     def sync_toward(self, ctrl=None):
-        pass
+        raise NotImplementedError("Controller does not implement __name__")
 
 
 class LinkBalancerCtrl(Controller):
@@ -55,31 +68,50 @@ class LinkBalancerCtrl(Controller):
     utilization over all visible links
     """
 
-    def __init__(self, sw=[], srv=[]):
-        """
-        self.graph: A copy of the simulation graph is given to each controller
-        instance at the time of simulation initialization
-        self. mylinks: a list of links in the self.graph which are goverend by
-        this controller
-        links' utilization would exceed this normalized utilization by handling it
-        """
-        self.switches = sw
-        self.servers = srv
-        self.graph = None
-        self.mylinks = []
-        self.name = ""
-        self.active_flows = []
+    def __init__(self, *args, **kwargs):
+        """Reuse __init__ of our superclass"""
+        super(LinkBalancerCtrl, self).__init__(*args, **kwargs)
 
-    def learn_my_links(self, simgraph):
+    def learn_local_servers(self):
         """
-        Learn the links of the sim graph that are directly observable by me
+        Learn the servers of the sim graph that are within my domain
+        Requrires that the controller be initialized by the simulation
         """
-        links = simgraph.edges()
+        assert len(self.mylinks) > 0
+        assert len(self.switches) > 0
+        assert self.graph != None
+
+        localservers = []
+        for srv in self.servers:
+            neighbor_sw = self.graph.neighbors(srv)
+            if len(neighbor_sw) != 1:
+                raise NotImplementedError("Single server links only")
+            else:
+                neighbor_sw = neighbor_sw[0]
+            if (neighbor_sw in self.switches):
+                localservers.append(srv)
+
+        # remove duplicates
+        self.localservers = list(set(localservers))
+
+    def learn_my_links(self):
+        """
+        Learn the links of a graph that are directly observable by me
+        e.g. which are directly connected to my switches
+        Optionally, learn my links from a graph that is not my own
+        """
+        assert (self.graph != None)
+        links = self.graph.edges()
+        mylinks = []
+
         for link in links:
             u, v = link[:2]
             if (v in self.switches or u in self.switches):
                 self.graph[u][v]['mylink'] = True
-                self.mylinks.append((u, v))
+                mylinks.append((u, v))
+
+        # remove duplicates
+        self.mylinks = list(set(mylinks))
 
     def update_my_state(self, simgraph):
         """
@@ -115,18 +147,33 @@ class LinkBalancerCtrl(Controller):
     #TODO register this sync in the metrics "%s sync to %s" % (self.name, ctrl.name)
 
 
-    def get_srv_paths(self, sw, graph):
+    def get_srv_paths(self, sw, graph=None, local=False):
         """ 
         Return a list of all paths from available servers to the entry
-        switch which can respond. We make the simplification that the path list
+        switch which can respond. We make the assumption here that the path list
         (routing) is known and static 
+
+        If local , Return only paths to servers within this controller's domain
         """
+        if graph == None:
+            graph = self.graph
+
         paths = []
-        avail_srvs = self.servers
+
+        if local:
+            avail_srvs = self.localservers
+        else:
+            avail_srvs = self.servers
+
+        assert graph != None
+        assert len(sw) > 0
+        assert len(avail_srvs)> 0
+
         for server in avail_srvs:
             paths.append(nx.shortest_path(graph, server, sw))
 
         return paths
+
 
     def compute_path_metric(self, sw, path, util, time_now):
         """
@@ -242,49 +289,22 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
     def __init__(self, greedylimit, *args, **kwargs):
         super(GreedyLinkBalancerCtrl, self).__init__(*args, **kwargs)
         self.greedylimit = greedylimit
-        self.localservers = None
-
-    def learn_local_servers(self):
-        """
-        Learn the servers of the sim graph that are within my domain
-        """
-        assert len(self.mylinks) > 0
-        assert len(self.switches) > 0
-        assert self.graph != None
-
-        for srv in self.graph.servers:
-            neighbor_sw = simgraph.neighbors(srv)
-            if len(neighbor_sw) != 1:
-                raise NotImplementedError("Single server links only")
-            if (neighbor_sw in self.switches):
-                self.localservers.append(srv)
-
-
-    def get_local_srv_paths(self, switch, graph):
-        """Return only paths to servers within this controller's domain"""
-
-        paths = []
-        avail_srvs = self.localservers
-        for server in avail_srvs:
-            paths.append(nx.shortest_path(graph, server, sw))
-
-        return paths
 
 
     def handle_request(self, sw, util, duration, time_now):
         #Find a best path to a server in our domain
-        paths = self.get_local_srv_paths(sw, self.graph)
+        paths = self.get_srv_paths(sw, self.graph, local=True)
         bestpath, bestpm = self.find_best_path(paths, sw, util, duration, time_now)
 
-        if (bestpm > greedylimit):
+        if (bestpm > self.greedylimit):
             oldbestpath = bestpath
             oldbestpm = bestpm
 
         #If the best path in our domain violates our greedy limit, find a
         # best path to a server outside our domain
-        if (bestpath == None or bestpm > greedylimit):
+        if (bestpath == None or bestpm > self.greedylimit):
             paths = self.get_srv_paths(sw, self.graph)
-            bestpath, bestpm = find_best_path(paths, sw, util, duration, time_now)
+            bestpath, bestpm = self.find_best_path(paths, sw, util, duration, time_now)
 
         #DESIGN DECISION: If the bestpm has a worse pathmetric 
         # than the oldbestpm, should we return oldbestpath instead?
@@ -296,4 +316,5 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
             #TODO log the fact that no path could be allocated to
             #handle this request
 
+        print "GIT IT " + str(bestpath)
         return bestpath

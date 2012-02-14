@@ -60,7 +60,8 @@ class Simulation(ResourceAllocater):
             if (ctrl.graph == None):
                 ctrl.graph = graph.copy()
                 ctrl.set_name("c%d" % i)
-                ctrl.learn_my_links(graph)
+                ctrl.learn_my_links()
+                ctrl.learn_local_servers()
         # Map each switch to its unique controller
             for switch in ctrl.get_switches():
                 assert (not switch in self.sw_to_ctrl)

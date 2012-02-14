@@ -24,13 +24,21 @@ from sim.simulation import *
 class TestController(unittest.TestCase):
     """Unittests for the LinkBalancerCtrl Class"""
 
+    def test_ctrl_not_implemented(self):
+        ctrl = Controller()
+        self.assertRaises(NotImplementedError, ctrl.handle_request)
+
+
     def test_ctrl_learns_its_links(self):
         """Ensure that a controller learns which links it governs"""
         ctrls = two_ctrls()
         LinkBalancerSim(two_switch_topo(), ctrls)
         a, b = ctrls
-        self.assertEqual(a.mylinks, [('sw1', 'sw2'), ('s1', 'sw1'),
-                                     ('sw2', 'sw1')])
+        expectedlinks = [('sw1', 'sw2'), ('s1', 'sw1'), ('sw2', 'sw1')]
+        for link in a.mylinks:
+            self.assertIn(link, expectedlinks)
+        for link in expectedlinks:
+            self.assertIn(link, a.mylinks)
 
     def test_update_ctrl_state(self):
         """Ensure that each controller updates its graph view from the sim"""
@@ -143,35 +151,72 @@ class TestController(unittest.TestCase):
         self.assertEqual(path_after, ['s2', 'sw2'])
 
     def test_instantiate_greedy_controller(self):
-        """Assert that a greedy controller's handle_request method will handle
-        all requests outside of its own domain with greedylimit 0
         """
-        # Basic sanity checks
+        Basic sanity checks for controller instantiation
+        """
         self.assertRaises(TypeError, GreedyLinkBalancerCtrl)
 
         mylimit = 0.5
         ctrl = GreedyLinkBalancerCtrl(greedylimit=mylimit)
         self.assertEqual(ctrl.greedylimit, mylimit)
+        
+        self.assertRaises(AssertionError, ctrl.learn_local_servers)
 
     def test_greedy_learns_local_servers(self):
         """Assert controller learns which servers of the graph are
         inside its domain"""
 
+        graph = two_switch_topo()
         mylimit = 0.5
-        ctrl = GreedyLinkBalancerCtrl(greedylimit=mylimit)
-        #ctrl.learn_local_servers()
-        #TODO 
+        ctrl = GreedyLinkBalancerCtrl(srv=['s1', 's2'], sw=['sw1'],
+                                      greedylimit=mylimit, graph=graph)
+        ctrl.set_graph(graph)
+        ctrl.learn_my_links()
+        ctrl.learn_local_servers()
 
+        self.assertEqual(ctrl.localservers, ['s1'])
 
-    def test_greedy_handle_request_with_limit_0(self):
-        """Assert that a greedy controller's handle_request method will handle
-        all requests outside of its own domain with greedylimit 0"""
-        pass
+        paths = [['s1','sw1'],['s2','sw2','sw1']]
+        localpaths = [['s1','sw1']]
 
-    def test_greedy_handle_request_with_limit_1(self):
+        self.assertEqual(paths, ctrl.get_srv_paths('sw1'))
+        self.assertEqual(localpaths, ctrl.get_srv_paths('sw1', local=True))
+
+    def test_greedy_handle_request_with_limit(self, mylimit=1):
         """Assert that a greedy controller's handle_request method will handle
         all requests inside of its own domain with greedylimit 1"""
-        pass
+
+        graph = two_switch_topo()
+        
+        ctrl = GreedyLinkBalancerCtrl(srv=['s1', 's2'], sw=['sw1'],
+                                      greedylimit=mylimit)
+
+        #TODO: Notice here that we can create a simulation where some switches
+        # aren't goverend by a controller. Simulator shouldn't allow this.
+        sim = LinkBalancerSim(graph, [ctrl])
+
+        self.assertEqual(ctrl.localservers, ['s1'])
+
+        paths = [['s1','sw1'],['s2','sw2','sw1']]
+        localpaths = [['s1','sw1']]
+
+        self.assertEqual(paths, ctrl.get_srv_paths('sw1'))
+        self.assertEqual(localpaths, ctrl.get_srv_paths('sw1', local=True))
+
+        workload = unit_workload(sw=['sw1'], size=1, duration=2, numreqs=3)
+        metrics = sim.run(workload)
+        serverlinkmetrics = []
+        expected = [[('s2', (0.0, 100)), ('s1', (1.0, 100))],
+                    [('s2', (0.0, 100)), ('s1', (2.0, 100))],
+                    [('s2', (0.0, 100)), ('s1', (2.0, 100))],
+                    [('s2', (0.0, 100)), ('s1', (1.0, 100))],
+                    [('s2', (0.0, 100)), ('s1', (0.0, 100))]]
+
+        
+        for metric in metrics['simulation_trace']:
+            serverlinkmetrics.append(metric['2_servers'])
+
+        self.assertEqual(serverlinkmetrics, expected)
 
     def test_greedy_handle_request_with_limit_exceeded(self):
         """Assert that a greedy controller's handle_request method will handle
