@@ -35,19 +35,11 @@ def two_switch_topo():
                           ['s2', 'sw2', {'capacity':100, 'used':0.0}]])
     return graph
 
-def two_switch_narrow_topo():
-    graph = nx.DiGraph()
-    graph.add_nodes_from(['sw1', 'sw2'], type='switch')
-    graph.add_nodes_from(['s1', 's2'], type='server')
-    graph.add_edges_from([['s1', 'sw1', {'capacity':101, 'used':0.0}],
-                          ['sw1', 'sw2', {'capacity':10, 'used':0.0}],
-                          ['sw2', 'sw1', {'capacity':10, 'used':0.0}],
-                          ['s2', 'sw2', {'capacity':101, 'used':0.0}]])
-    return graph
+    
 
 # Anja's topology suggestion to test for non-triviality of 'SW2'
 # decision on whom to send requests when not served by s2
-def three_switch_topo():
+def three_switch_triangle_topo():
     graph = nx.DiGraph()
     graph.add_nodes_from(['sw1', 'sw2', 'sw3'], type='switch')
     graph.add_nodes_from(['s1', 's2', 's3'], type='server')
@@ -61,8 +53,9 @@ def three_switch_topo():
     return graph
 
 
-# Dan put this here to demonstrate corner cases of simulation logic
-def greedy_topo():
+# Dan put this here to generate a topology figure to demonstrate corner cases
+# of simulation logic
+def cornercase_topo():
     graph = nx.DiGraph()
     graph.add_nodes_from(['sw1', 'sw2', 'sw3', 'sw4'], type='switch')
     graph.add_nodes_from(['s1a', 's1b', 's3', 's4'], type='server')
@@ -78,6 +71,8 @@ def greedy_topo():
                           ['s4', 'sw4', {'capacity':100, 'used':0.0}]])
     return graph
 
+#TODO Dan: I plan to refactor the controllers into the *topo() functions to
+# return a (graph, controller[]) tuple
 def two_ctrls():
     """Return list of two different controllers."""
     ctrls = []
