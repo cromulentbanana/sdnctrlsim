@@ -6,6 +6,7 @@
 import heapq
 from itertools import product
 import json
+import logging
 from math import sqrt
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -15,6 +16,8 @@ import sys
 import unittest
 from workload import *
 from resource_allocator import *
+
+logger = logging.getLogger(__name__)
 
 class Controller(ResourceAllocater):
     """
@@ -194,7 +197,7 @@ class LinkBalancerCtrl(Controller):
             linkmetric = float(used) / capacity
             # If we would oversubscribe this link
             if linkmetric > 1:
-                print >> sys.stderr, "[%s] OVERSUBSCRIBED [%f] at switch %s" % (str(time_now), linkmetric,  str(sw))
+                logger.info("[%s] OVERSUBSCRIBED [%f] at switch [%s]", str(time_now), linkmetric,  str(sw))
                 break
             else:
                 linkmetrics.append(linkmetric)
@@ -203,8 +206,9 @@ class LinkBalancerCtrl(Controller):
         if len(linkmetrics) > 0:
             pathmetric = max(linkmetrics)
 
-        if (time_now > 0):
-            print str(time_now) + " DEBUG PM " + str(self) + str((path, linkmetrics))
+        funname = sys._getframe().f_code.co_name
+        logger.debug("[%s] [%s] [%s] [%s]", funname, str(time_now), str(self),
+                     str((path, linkmetrics)))
         return (pathmetric, len(links))
 
     def find_best_path(self, paths, sw, util, duration, time_now):
@@ -233,12 +237,14 @@ class LinkBalancerCtrl(Controller):
         if (bestpath == None):
             return None
 
-        #DEBUG
-        #print str(time_now) + " DEBUG HR " + str(self) + "" + str(bestpath) \
-        #+ " " + str(bestpathlen) + " " + str(bestpathmetric)
-        #for i in self.graph.edges(data=True):
-        #    print i
-        #print 
+
+        #TODO, don't execute this if we're below the logging level 
+        funname = sys._getframe().f_code.co_name
+        logger.debug("[%s] [%s] [%s] [%s] [%s] [%s]", 
+                     funname, str(time_now), str(self), str(bestpath),
+                     str(bestpathlen), str(bestpathmetric))
+        logger.debug(str(self.graph.edges(data=True)))
+
         return (bestpath, bestpathmetric)
 
     def handle_request(self, sw, util, duration, time_now):
@@ -252,10 +258,8 @@ class LinkBalancerCtrl(Controller):
         @return the chosen best path as a list of consecutive link pairs
          ((c1,sw1), (sw1,sw2),...,(sw_n, srv_x))
         """
-        #DEBUG
-        #print "DEBUG BEFORE"
-        #for i in self.graph.edges(data=True):
-        #    print i
+
+        logger.debug(str(self.graph.edges(data=True)))
 
         #1 Get available paths from servers to switch
         paths = self.get_srv_paths(sw, self.graph)
@@ -316,5 +320,5 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
             #TODO log the fact that no path could be allocated to
             #handle this request
 
-        print "GIT IT " + str(bestpath)
+        logger.debug(str(bestpath))
         return bestpath

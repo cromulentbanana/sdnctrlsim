@@ -6,6 +6,7 @@
 import heapq
 from itertools import product
 import json
+import logging
 from math import sqrt
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -14,6 +15,8 @@ import unittest
 import sys
 import unittest
 from workload import *
+
+logger = logging.getLogger(__name__)
 
 class ResourceAllocater(object):
 

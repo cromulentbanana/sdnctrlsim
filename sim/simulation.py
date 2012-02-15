@@ -16,6 +16,8 @@ import unittest
 from workload import *
 from resource_allocator import *
 
+logger = logging.getLogger(__name__)
+
 def sum_grouped_by(fnc, iterable):
     res = {}
     for i in iterable:
@@ -259,16 +261,12 @@ class LinkBalancerSim(Simulation):
 
             while (arr_time <= time_now and len(workload) > 0):
                 arr_time, sw, util, duration = workload.pop(0)
-#DEBUG
-#                foo = workload.pop(0)
-#                print 
-#                print (debugcounter, foo)
-#                for i in self.graph.edges(data=True):
-#                    print i
-#                print 
-#                debugcounter += 1
-#                arr_time, sw, util, duration = foo
-#DEBUG
+
+                funname = sys._getframe().f_code.co_name
+                logger.debug("[%s] [%s] [%s] [%s]", funname, str(arr_time),
+                             str(sw), str(util), str(duration))
+                logger.debug("[%s]", str(self.graph))
+
                 # Free all resources that ended before or at arr_time
                 self.free_resources(arr_time)
                 # Let every controller learn its state from the topology
@@ -310,10 +308,7 @@ class LinkBalancerSim(Simulation):
                 show_graph_status(self.graph, pos)
                 raw_input("At time %s. Press enter to continue." % time_now)
 
-            print "SIMULATION:"
-            for i in self.graph.edges(data=True):
-                print i
-            print 
+            logger.debug(self.graph.edges(data=True))
 
             time_now += step_size
             
