@@ -387,12 +387,13 @@ class LinkBalancerSim(Simulation):
         return metrics
 
     def simulation_trace(self, graph, time_step, new_reqs):
-      result = {
-         "0_time": time_step,
-         "1_new_reqs": new_reqs,
-         "2_servers":  map(lambda(x): (x, self.server_utilization(x)), self.servers),
-         "3_ingress":  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows),
-         "4_links":  graph.edges(data=True)
-      }
+      result = OrderedDict([
+         ("time", time_step),
+         ("new_reqs", new_reqs),
+         ("servers",  map(lambda(x): (x, self.server_utilization(x)), self.servers)),
+         ("ingress",  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows)),
+         ("links",  graph.edges(data=True))
+         ]
+      )
       return result
 

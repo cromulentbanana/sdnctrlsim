@@ -210,7 +210,7 @@ class TestController(unittest.TestCase):
 
         
         for metric in metrics['simulation_trace']:
-            serverlinkmetrics.append(metric['2_servers'])
+            serverlinkmetrics.append(metric['servers'])
 
         self.assertEqual(serverlinkmetrics, expected)
 
