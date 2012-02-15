@@ -36,9 +36,9 @@ class TestController(unittest.TestCase):
         a, b = ctrls
         expectedlinks = [('sw1', 'sw2'), ('s1', 'sw1'), ('sw2', 'sw1')]
         for link in a.mylinks:
-            self.assertIn(link, expectedlinks)
+            self.assertTrue(link in expectedlinks)
         for link in expectedlinks:
-            self.assertIn(link, a.mylinks)
+            self.assertTrue(link in a.mylinks)
 
     def test_update_ctrl_state(self):
         """Ensure that each controller updates its graph view from the sim"""
