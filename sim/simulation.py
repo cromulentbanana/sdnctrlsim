@@ -372,13 +372,14 @@ class LinkBalancerSim(Simulation):
         print >>f, json.dumps(metrics, sort_keys=True, indent=4)
         f.close()
 
-        # log the network graph if not already drawn
-        try:
-            os.stat(filename + ".pdf")
-        except:
-            nx.draw_spring(self.graph)
-            plt.savefig(filename + ".pdf")
-            plt.close()
+        if show_graph:
+            # log the network graph if not already drawn
+            try:
+                os.stat(filename + ".pdf")
+            except:
+                nx.draw_spring(self.graph)
+                plt.savefig(filename + ".pdf")
+                plt.close()
 
         return metrics
 
