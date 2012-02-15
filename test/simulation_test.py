@@ -4,22 +4,19 @@
 # Brandon Heller <brandonh@stanford.edu>
 
 
-import heapq
-from itertools import product
-import json
-from math import sqrt
 import os
 import sys
 import unittest
 
-import matplotlib.pyplot as plt
 import networkx as nx
 
 from test_helper import *
 
 if __name__ == '__main__':
+    # set up include path for direct test invocation during development
     sys.path.append(os.path.dirname(__file__) + "/..")
 
+from sim.workload import *
 from sim.controller import *
 from sim.simulation import *
 
@@ -268,7 +265,7 @@ class TestTwoSwitch(unittest.TestCase):
                 self.assertTrue(metric_val > 0.0)
 
     def test_two_ctrl_vary_phase(self, period=10):
-        """Ensure server RMSE is maximized when demands are out-of-phase
+        """simulation_test#test_two_ctrl_vary_phase: Ensure server RMSE is maximized when demands are out-of-phase
 
         Controllers never sync
         When phase offset is zero, RMSE should be zero.

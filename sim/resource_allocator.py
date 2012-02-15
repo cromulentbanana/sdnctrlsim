@@ -4,21 +4,11 @@
 # Brandon Heller <brandonh@stanford.edu>
 
 import heapq
-from itertools import product
-import json
 import logging
-from math import sqrt
-import matplotlib.pyplot as plt
-import networkx as nx
-import os
-import unittest
-import sys
-import unittest
-from workload import *
 
 logger = logging.getLogger(__name__)
 
-class ResourceAllocater(object):
+class ResourceAllocator(object):
 
     def _update_last_now(self, now):
         if hasattr(self, 'last_now'):

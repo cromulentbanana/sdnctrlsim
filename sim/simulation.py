@@ -3,18 +3,26 @@
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 # Brandon Heller <brandonh@stanford.edu>
 
-import heapq
+# Python std lib imports
 from itertools import product
 import json
+import logging
 from math import sqrt
+try:
+    from collections import OrderedDict
+except:
+    # OrderedDict backport for python<2.7
+    from lib.ordered_dict import OrderedDict
+import os
+import sys
+
+# 3rd party libs
 import matplotlib.pyplot as plt
 import networkx as nx
-import os
-import unittest
-import sys
-import unittest
-from workload import *
-from resource_allocator import *
+
+# sim modules
+from sim.resource_allocator import ResourceAllocator
+from sim.workload import old_to_new
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +33,7 @@ def sum_grouped_by(fnc, iterable):
         res[key] = res.get(key, 0) + val
     return res
 
-class Simulation(ResourceAllocater):
+class Simulation(ResourceAllocator):
     """
     Assign switches to controllers in the graph, and run the workload through
     the switches, controllers

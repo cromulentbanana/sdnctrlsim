@@ -3,23 +3,18 @@
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 # Brandon Heller <brandonh@stanford.edu>
 
-import heapq
-from itertools import product
-import json
 import logging
 from math import sqrt
+import sys
+
 import matplotlib.pyplot as plt
 import networkx as nx
-import os
-import unittest
-import sys
-import unittest
-from workload import *
-from resource_allocator import *
+
+from resource_allocator import ResourceAllocator
 
 logger = logging.getLogger(__name__)
 
-class Controller(ResourceAllocater):
+class Controller(ResourceAllocator):
     """
     Generic controller -- does not implement control logic:
     """

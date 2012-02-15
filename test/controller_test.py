@@ -3,22 +3,17 @@
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 # Brandon Heller <brandonh@stanford.edu>
 
-import heapq
-from itertools import product
-import json
-from math import sqrt
 import os
 import sys
 import unittest
 
-import matplotlib.pyplot as plt
-import networkx as nx
-
 from test_helper import *
 
 if __name__ == '__main__':
+    # set up include path for direct test invocation during development
     sys.path.append(os.path.dirname(__file__) + "/..")
 
+from sim.workload import *
 from sim.controller import *
 from sim.simulation import *
 
