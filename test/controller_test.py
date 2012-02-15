@@ -7,16 +7,17 @@ import heapq
 from itertools import product
 import json
 from math import sqrt
-import matplotlib.pyplot as plt
-import networkx as nx
 import os
-import unittest
 import sys
 import unittest
 
+import matplotlib.pyplot as plt
+import networkx as nx
+
 from test_helper import *
 
-sys.path.append(os.path.dirname(__file__) + "/..")
+if __name__ == '__main__':
+    sys.path.append(os.path.dirname(__file__) + "/..")
 
 from sim.controller import *
 from sim.simulation import *
