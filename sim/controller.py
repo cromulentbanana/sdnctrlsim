@@ -263,13 +263,13 @@ class LinkBalancerCtrl(Controller):
         # along the path
         bestpath, bestpm = self.find_best_path(paths, sw, util, duration, time_now)
 
-        if len(bestpath) > 0: 
+        if len(bestpath) > 0:
             self.allocate_resources(bestpath, util, time_now, duration)
         else:
             pass
             #TODO log the fact that no path could be allocated to
             #handle this request
-            
+
         return bestpath
 
 
@@ -308,7 +308,7 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
         #DESIGN DECISION: If the bestpm has a worse pathmetric 
         # than the oldbestpm, should we return oldbestpath instead?
 
-        if len(bestpath) > 0: 
+        if len(bestpath) > 0:
             self.allocate_resources(bestpath, util, time_now, duration)
         else:
             pass
