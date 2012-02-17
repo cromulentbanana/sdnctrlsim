@@ -2,20 +2,29 @@
 #
 # Nikhil Handigol <nikhilh@cs.stanford.edu>
 
-import re
-import itertools
+import json
+import math
 import matplotlib as m
 import os
+import random
+
 if os.uname()[0] == "Darwin":
     m.use("MacOSX")
 else:
     pass
     #m.use("Agg")
-import matplotlib.pyplot as plt
-import argparse
-import math
+
+def write_dummy_data():
+    d = {}
+    keys = ['rmse_links', 'rmse_servers', 'simulation_trace']
+    for k in keys:
+        d[k] = [random.random() for n in range(100)]
+    f = open('dummy.metrics', 'w')
+    print >>f, json.dumps(d)
+    f.close()
 
 def ewma(alpha, values):
+    """Exponential Weighted Moving Average"""
     if alpha == 0:
         return values
     ret = []
@@ -97,6 +106,7 @@ def fmtGenerator():
     while True:
         yield colors[ index ]
         index = ( index + 1 ) % len( colors )
+
 def colorGenerator():
     "Return cycling list of colors"
     colors = [ 'red', 'green', 'blue', 'purple', 'orange', 
