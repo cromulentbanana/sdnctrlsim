@@ -122,11 +122,19 @@ class LinkBalancerCtrl(Controller):
             if not (self.graph[u][v]['used'] == simgraph[u][v]['used']):
                 self.graph[u][v]['used'] = simgraph[u][v]['used']
 
-    def sync_toward(self, ctrl, specificedges=None, timestep=None):
+    def sync_toward(self, dstctrl, specificedges=None, timestep=None):
         """
         Share the utilization state of links goverend by this controller with
         another controller in a "push" fashion
-        Optionally specify only specific links to share with the other ctrl
+        Optionally specify only specific links (edges) to share with the other dstctrl
+
+        In the corner case, where a link crosses a domain, its state is owned
+        by both controllers and not modified during sync. When two controllers
+        share ownership of a link and hold different state for it, the
+        controllers can not resolve their different views throgh sync. In the
+        simulation, this scenario will never emerge as long as controllers
+        learn their link state (learn_my_state) from the simulation graph
+        before handling requests.
         """
         if (specificedges):
             mylinks = specificedges
@@ -135,14 +143,13 @@ class LinkBalancerCtrl(Controller):
 
         for link in mylinks:
             u, v = link
-            ctrl.graph[u][v]['used'] = self.graph[u][v]['used']
-            #Valid could alternately hold the timestep to
-            #indicate last sync time
-            #Timestamp when we learned this link state
-            if not (ctrl.graph[u][v].get('mylink')):
-                ctrl.graph[u][v]['timestamp'] = timestep
+            # A controller should only accept state updates to links that do
+            # not belong to its own domain.
+            if not (dstctrl.graph[u][v].get('mylink')):
+                dstctrl.graph[u][v]['used'] = self.graph[u][v]['used']
+                dstctrl.graph[u][v]['timestamp'] = timestep
 
-    #TODO register this sync in the metrics "%s sync to %s" % (self.name, ctrl.name)
+        logger.debug("%s sync to %s" % (self.name, dstctrl.name))
 
 
     def get_srv_paths(self, sw, graph=None, local=False):
