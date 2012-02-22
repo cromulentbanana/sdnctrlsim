@@ -1,6 +1,8 @@
 #!/usr/bin/python
-'''Logging utility for the simulator:
-Code borrowed from Mininet 
+#
+# Nikhil Handigol <nikhilh@stanford.edu>
+
+'''Logging utility for the simulator
 
 -- Nikhil Handigol'''
 
