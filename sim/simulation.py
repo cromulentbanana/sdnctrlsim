@@ -9,10 +9,16 @@ import json
 import logging
 from math import sqrt
 try:
+    # OrderedDict for python>=2.7
     from collections import OrderedDict
 except:
-    # OrderedDict backport for python<2.7
-    from lib.ordered_dict import OrderedDict
+    try:
+        # OrderedDict for python=2.6
+        # sudo easy_install ordereddict
+        from ordereddict import OrderedDict
+    except:
+        # OrderedDict backport for python<2.7
+        from lib.ordered_dict import OrderedDict
 import os
 import sys
 
