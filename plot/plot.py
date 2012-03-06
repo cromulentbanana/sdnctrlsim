@@ -36,19 +36,23 @@ def main():
     if args.dummydata:
         ph.write_dummy_data()
     elif args.files:
-        plot_timeseries()
-        plot_boxplot()
+        metrics = []
+        for filename in args.files:
+            ff = open(filename, 'r')
+            j = json.loads("".join(ff.readlines()).strip())
+            metrics.append((filename,j))
+            ff.close()
+        plot_timeseries(metrics)
+        plot_boxplot(metrics)
     else:
         parser.print_help()
 
-def plot_timeseries(saveplot=False):
+def plot_timeseries(metrics, saveplot=False):
     cgen = ph.colorGenerator()
     fgen = ph.fmtGenerator()
-    for f in args.files:
-        ff = open(f, 'r')
-        j = json.loads("".join(ff.readlines()).strip())
-        rmsesrv = j["rmse_servers"]
-        trace = j["simulation_trace"]
+    for filename, m in metrics:
+        rmsesrv = m["rmse_servers"]
+        trace = m["simulation_trace"]
         ingress = [ i['ingress'] for i in trace ]
         ingress_switches = {}
         ingress_switch_vals = {}
@@ -67,10 +71,9 @@ def plot_timeseries(saveplot=False):
 
         for k, v in ingress_switch_vals.iteritems():
             plt.plot(range(len(v)), v, fgen.next()+'--', label="units wkload ingress at " + k, color=cgen.next())
-        plt.plot(range(len(rmsesrv)), rmsesrv, fgen.next()+'-', label="RMSE "+str(f), color=cgen.next())
-        ff.close()
+        plt.plot(range(len(rmsesrv)), rmsesrv, fgen.next()+'-', label="RMSE"+str(filename), color=cgen.next())
 
-    plt.title("Timeseries " + str(f))
+    plt.title("Timeseries " + str(filename))
     plt.ylabel("")
     plt.xlabel("Time (ticks)")
     plt.grid()
@@ -81,15 +84,13 @@ def plot_timeseries(saveplot=False):
     else:
         plt.show()
 
-def plot_boxplot(saveplot=False):
+def plot_boxplot(metrics, saveplot=False):
     cgen = ph.colorGenerator()
     fgen = ph.fmtGenerator()
     data = []
-    for f in args.files:
-        ff = open(f, 'r')
-        j = json.loads("".join(ff.readlines()).strip())
-        data.append(j["rmse_servers"])
-        trace = j["simulation_trace"]
+    for filename, m in metrics:
+        data.append(m["rmse_servers"])
+        trace = m["simulation_trace"]
         ingress = [ i['ingress'] for i in trace ]
         ingress_switches = {}
         ingress_switch_vals = {}
@@ -106,10 +107,9 @@ def plot_boxplot(saveplot=False):
                     value = 0
                 ingress_switch_vals.setdefault(switch,[]).append(value)
 
-        ff.close()
 
     plt.boxplot(data)
-    plt.title("Boxplot" + str(f))
+    plt.title("Boxplot" + str(filename))
     plt.ylabel("")
     #TODO ennumerate boxplots
     plt.xlabel("sync_period")

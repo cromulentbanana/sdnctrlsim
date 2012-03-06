@@ -30,8 +30,6 @@ import networkx as nx
 from sim.resource_allocator import ResourceAllocator
 from sim.workload import old_to_new
 
-logger = logging.getLogger(__name__)
-
 def sum_grouped_by(fnc, iterable):
     res = {}
     for i in iterable:
@@ -277,9 +275,9 @@ class LinkBalancerSim(Simulation):
                 arr_time, sw, util, duration = workload.pop(0)
 
                 funname = sys._getframe().f_code.co_name
-                logger.debug("[%s] [%s] [%s] [%s]", funname, str(arr_time),
+                logging.debug("[%s] [%s] [%s] [%s] [%s]", funname, str(arr_time),
                              str(sw), str(util), str(duration))
-                logger.debug("[%s]", str(self.graph))
+                logging.debug("[%s]", str(self.graph.edges(data=True)))
 
                 # Free all resources that ended before or at arr_time
                 self.free_resources(arr_time)
@@ -291,6 +289,7 @@ class LinkBalancerSim(Simulation):
                 time_elapsed_since_sync = arr_time - last_sync
                 if ((sync_period != None) and time_elapsed_since_sync >= sync_period):
                     self.sync_ctrls()
+                    logging.debug("[%s] %s", str(arr_time), "Synced all ctrls")
                     if sync_period > 0:
                         last_sync = arr_time - (time_elapsed_since_sync % sync_period)
 
@@ -322,7 +321,7 @@ class LinkBalancerSim(Simulation):
                 show_graph_status(self.graph, pos)
                 raw_input("At time %s. Press enter to continue." % time_now)
 
-            logger.debug(self.graph.edges(data=True))
+            logging.debug(self.graph.edges(data=True))
 
             time_now += step_size
             

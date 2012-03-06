@@ -149,7 +149,7 @@ class LinkBalancerCtrl(Controller):
                 dstctrl.graph[u][v]['used'] = self.graph[u][v]['used']
                 dstctrl.graph[u][v]['timestamp'] = timestep
 
-        logger.debug("%s sync to %s" % (self.name, dstctrl.name))
+        #logging.debug("%s sync to %s" % (self.name, dstctrl.name))
 
 
     def get_srv_paths(self, sw, graph=None, local=False):
@@ -192,14 +192,15 @@ class LinkBalancerCtrl(Controller):
         # calculate available capacity for each link in path
         for link in links:
             u, v = link
-#            if not (self.graph[u][v].get('mylink')):
-#                continue
+            #DESIGN CHOICE: Should we 1) always include extra-domain state, 2)
+            #only include extra-domain state when not stale (timestamp), 3) always exclude
+            #extra-domain state when calculating the path metric? Here we do (1)
             used = self.graph[u][v]['used'] + util
             capacity = self.graph[u][v]['capacity']
             linkmetric = float(used) / capacity
             # If we would oversubscribe this link
             if linkmetric > 1:
-                logger.info("[%s] OVERSUBSCRIBED [%f] at switch [%s]", str(time_now), linkmetric,  str(sw))
+                logging.info("[%s] OVERSUBSCRIBED [%f] at switch [%s]", str(time_now), linkmetric,  str(sw))
                 break
             else:
                 linkmetrics.append(linkmetric)
@@ -209,14 +210,14 @@ class LinkBalancerCtrl(Controller):
             pathmetric = max(linkmetrics)
 
         funname = sys._getframe().f_code.co_name
-        logger.debug("[%s] [%s] [%s] [%s]", funname, str(time_now), str(self),
+        logging.debug("[%s] [%s] [%s] [%s]", funname, str(time_now), str(self),
                      str((path, linkmetrics)))
         return (pathmetric, len(links))
 
     def find_best_path(self, paths, sw, util, duration, time_now):
         bestpath = None
         bestpathmetric = None # [0,1] lower -> better path
-        bestpathlen = None #lower -> better path
+        bestpathlen = None # lower -> better path
         for path in paths:
             pathmetric, pathlen = self.compute_path_metric(sw, path, util, time_now)
 
@@ -239,13 +240,10 @@ class LinkBalancerCtrl(Controller):
         if (bestpath == None):
             return None
 
-
-        #TODO, don't execute this if we're below the logging level 
         funname = sys._getframe().f_code.co_name
-        logger.debug("[%s] [%s] [%s] [%s] [%s] [%s]", 
+        logging.debug("[%s] [%s] [%s] [%s] [%s] [%s]", 
                      funname, str(time_now), str(self), str(bestpath),
                      str(bestpathlen), str(bestpathmetric))
-        logger.debug(str(self.graph.edges(data=True)))
 
         return (bestpath, bestpathmetric)
 
@@ -261,7 +259,7 @@ class LinkBalancerCtrl(Controller):
          ((c1,sw1), (sw1,sw2),...,(sw_n, srv_x))
         """
 
-        logger.debug(str(self.graph.edges(data=True)))
+        #logging.debug(str(self.graph.edges(data=True)))
 
         #1 Get available paths from servers to switch
         paths = self.get_srv_paths(sw, self.graph)
@@ -273,9 +271,7 @@ class LinkBalancerCtrl(Controller):
         if len(bestpath) > 0:
             self.allocate_resources(bestpath, util, time_now, duration)
         else:
-            pass
-            #TODO log the fact that no path could be allocated to
-            #handle this request
+            logging.warn("[%s] No best path found at switch [%s]", str(time_now), str(sw))
 
         return bestpath
 
@@ -291,11 +287,9 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
     greedylimit: A value between [0,1]. A greedylimit of 1 means keep all flows
     in our domain until doing so would oversubscribe a link.
     """
-
     def __init__(self, greedylimit, *args, **kwargs):
         super(GreedyLinkBalancerCtrl, self).__init__(*args, **kwargs)
         self.greedylimit = greedylimit
-
 
     def handle_request(self, sw, util, duration, time_now):
         #Find a best path to a server in our domain
@@ -312,15 +306,13 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
             paths = self.get_srv_paths(sw, self.graph)
             bestpath, bestpm = self.find_best_path(paths, sw, util, duration, time_now)
 
-        #DESIGN DECISION: If the bestpm has a worse pathmetric 
+        #DESIGN CHOICE: If the bestpm has a worse pathmetric 
         # than the oldbestpm, should we return oldbestpath instead?
 
         if len(bestpath) > 0:
             self.allocate_resources(bestpath, util, time_now, duration)
         else:
-            pass
-            #TODO log the fact that no path could be allocated to
-            #handle this request
+            logging.warn("[%s] No best path found at switch [%s]", str(time_now), str(sw))
 
-        logger.debug(str(bestpath))
+        logging.debug(str(bestpath))
         return bestpath
