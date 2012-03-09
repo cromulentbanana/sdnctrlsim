@@ -82,6 +82,24 @@ def two_ctrls():
     ctrls.append(c2)
     return ctrls
 
+def two_greedy_ctrls(greedylimit=1):
+    """Return list of two different controllers."""
+    ctrls = []
+    c1 = GreedyLinkBalancerCtrl(greedylimit, sw=['sw1'], srv=['s1', 's2'])
+    c2 = GreedyLinkBalancerCtrl(greedylimit, sw=['sw2'], srv=['s1', 's2'])
+    ctrls.append(c1)
+    ctrls.append(c2)
+    return ctrls
+
+def two_random_ctrls():
+    """Return list of two different controllers."""
+    ctrls = []
+    c1 = RandomChoiceCtrl(sw=['sw1'], srv=['s1', 's2'])
+    c2 = RandomChoiceCtrl(sw=['sw2'], srv=['s1', 's2'])
+    ctrls.append(c1)
+    ctrls.append(c2)
+    return ctrls
+
 def strictly_local_ctrls(n=2):
     """ Create a number of controllers that strictly only send traffic to one local server they know about """
     return [ LinkBalancerCtrl(sw=["sw%d"%i], srv=["s%d"%i]) for i in range(1, 1+ n) ]

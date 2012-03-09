@@ -9,15 +9,17 @@ import logging.config
 from sim.simulation import LinkBalancerSim
 from sim.workload import dual_offset_workload, wave
 import sys
-from test.test_helper import two_ctrls, two_switch_topo, strictly_local_ctrls
+from test.test_helper import two_ctrls, two_random_ctrls, two_greedy_ctrls, two_switch_topo, strictly_local_ctrls
 
 logging.config.fileConfig('setup.cfg')
 logger= logging.getLogger(__name__)
 
 def main():
-    demo_strictly_local_ctrls()
+#    demo_strictly_local_ctrls()
     sync_improves_metric()
-    synced_dist_equals_central()
+#    synced_dist_equals_central()
+    compare_random_dist_to_centralized()
+    compare_greedy_dist_to_centralized()
 #    plot.plot_timeseries()
 #    plot.plot_boxplot()
 
@@ -87,11 +89,48 @@ def synced_dist_equals_central(period=8, max_demand=4, show_graph=False):
                           show_graph=show_graph)
         logger.info("ending %s", myname)
 
-def compare_greedy_dist_to_centralized(max_demand=8, show_graph=False):
+def compare_random_dist_to_centralized(period=16, max_demand=8, show_graph=False):
+    """ """
+    timesteps = period * 2
+    for sync_period in range(0, timesteps):
+        myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
+        logger.info("starting %s", myname)
+        workload = dual_offset_workload(switches=['sw1', 'sw2'],
+                                        period=period, offset=period/2.0,
+                                        max_demand=max_demand, size=1,
+                                        duration=2, timesteps=timesteps,
+                                        workload_fcn=wave)
+
+        ctrls = two_random_ctrls()
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        sim.run_and_trace(myname, workload, old=True, sync_period=sync_period,
+                          show_graph=show_graph)
+        logger.info("ending %s", myname)
+
+   
+
+
+def compare_greedy_dist_to_centralized(period=16, max_demand=30, show_graph=False):
     """Ensure that a distributed controller simulation run with sync_period=0
     yields exactly the same result as the same toplology and workload with a
     single controller."""
-    pass
+    timesteps = period * 2
+    for sync_period in range(0, timesteps):
+        myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
+        logger.info("starting %s", myname)
+        workload = dual_offset_workload(switches=['sw1', 'sw2'],
+                                        period=period, offset=period/2.0,
+                                        max_demand=max_demand, size=1,
+                                        duration=2, timesteps=timesteps,
+                                        workload_fcn=wave)
+
+        ctrls = two_greedy_ctrls(greedylimit=0.5)
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        sim.run_and_trace(myname, workload, old=True, sync_period=sync_period,
+                          show_graph=show_graph)
+        logger.info("ending %s", myname)
+
+
 
 def compare_greedy_dist_to_sync_dist(max_demand=8, show_graph=False):
     """Understand what improvement synchronization gives us over a greedy

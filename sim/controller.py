@@ -4,7 +4,7 @@
 # Brandon Heller <brandonh@stanford.edu>
 
 import logging
-from math import sqrt
+from random import choice
 import sys
 
 import matplotlib.pyplot as plt
@@ -316,3 +316,15 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
 
         logging.debug(str(bestpath))
         return bestpath
+
+class RandomChoiceCtrl(LinkBalancerCtrl):
+    """
+    This controller picks a path at random
+    """
+    def __init__(self, *args, **kwargs):
+        super(RandomChoiceCtrl, self).__init__(*args, **kwargs)
+
+    def handle_request(self, sw, util, duration, time_now):
+        #Find a best path to a server in our domain
+        paths = self.get_srv_paths(sw, self.graph)
+        return choice(paths)
