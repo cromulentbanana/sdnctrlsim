@@ -7,7 +7,7 @@ import logging
 import logging.config
 #import plot #automatically plot selected ouputs directly after running
 from sim.simulation import LinkBalancerSim
-from sim.workload import dual_offset_workload, wave
+from sim.workload import dual_offset_workload, sawtooth, wave
 import sys
 from test.test_helper import two_ctrls, two_random_ctrls, two_greedy_ctrls, two_switch_topo, strictly_local_ctrls
 
@@ -16,10 +16,12 @@ logger= logging.getLogger(__name__)
 
 def main():
 #    demo_strictly_local_ctrls()
-    sync_improves_metric()
+    for demand in [8,16,32,64,128]:
+        sync_improves_metric(max_demand=demand)
+        for greedylimit in [0,0.25,0.5,0.75,1]:
+            compare_greedy_dist_to_centralized(max_demand=demand, greedylimit=greedylimit)
 #    synced_dist_equals_central()
     compare_random_dist_to_centralized()
-    compare_greedy_dist_to_centralized()
 #    plot.plot_timeseries()
 #    plot.plot_boxplot()
 
@@ -45,21 +47,23 @@ def demo_strictly_local_ctrls(max_demand=8, show_graph=False):
                           show_graph=show_graph)
         logger.info("ending %s", myname)
 
-def sync_improves_metric(period=16, max_demand=8, show_graph=False):
+def sync_improves_metric(period=32, max_demand=200, show_graph=False):
     """Evalute the value of synchronization for a LinkBalanerCtrl by showing
     its effect on performance metric. We expect that for a workload which
     imparts server link imbalance across multiple domains, syncing will help
     improve the rmse_server metric."""
 
-    timesteps = period * 2
+    timesteps = period * 4
     for sync_period in range(0, timesteps):
-        myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
+        myname = '%(fname)s_%(demand)d_%(num)02d' % {"fname": sys._getframe().f_code.co_name,
+                                                     "demand": max_demand,
+                                                     "num": sync_period}
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                         period=period, offset=period/2.0,
                                         max_demand=max_demand, size=1,
-                                        duration=2, timesteps=timesteps,
-                                        workload_fcn=wave)
+                                    duration=2, timesteps=timesteps,
+                                    workload_fcn=wave)
 
         ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
@@ -110,13 +114,18 @@ def compare_random_dist_to_centralized(period=16, max_demand=8, show_graph=False
    
 
 
-def compare_greedy_dist_to_centralized(period=16, max_demand=30, show_graph=False):
+def compare_greedy_dist_to_centralized(period=16, max_demand=30,
+                                       greedylimit=0.5, show_graph=False):
     """Ensure that a distributed controller simulation run with sync_period=0
     yields exactly the same result as the same toplology and workload with a
     single controller."""
     timesteps = period * 2
     for sync_period in range(0, timesteps):
-        myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
+        myname = '%(fname)s_%(demand)d_%(gl)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name,
+                                                     "demand": max_demand,
+                                                     "gl": str(greedylimit),
+                                                     "num": sync_period}
+
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                         period=period, offset=period/2.0,
@@ -124,7 +133,7 @@ def compare_greedy_dist_to_centralized(period=16, max_demand=30, show_graph=Fals
                                         duration=2, timesteps=timesteps,
                                         workload_fcn=wave)
 
-        ctrls = two_greedy_ctrls(greedylimit=0.5)
+        ctrls = two_greedy_ctrls(greedylimit=greedylimit)
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
         sim.run_and_trace(myname, workload, old=True, sync_period=sync_period,
                           show_graph=show_graph)

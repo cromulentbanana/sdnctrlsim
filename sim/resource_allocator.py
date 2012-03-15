@@ -38,6 +38,8 @@ class ResourceAllocator(object):
         for src, dst in links:
             edge = graph.edge[src][dst]
             if (edge['used'] + resources > edge['capacity']):
+                logging.info("Not allocating [%d] at time [%d]", resources,
+                             now)
                 return
 
         for src, dst in links:
@@ -69,6 +71,10 @@ class ResourceAllocator(object):
                 newutil = graph.edge[src][dst]['used'] - resources
                 # If we are properly allocating resources, we should never free
                 # more resources than were ever used
-                assert (newutil >= 0)
+                #assert (newutil >= 0)
+                if newutil < 0:
+                    logging.warn("[%s] Over-freeing path [%s] to [%d] at time [%d]", 
+                                 str(self), str(path), newutil, now)
+
                 graph.edge[src][dst]['used'] = max(0.0, newutil)
 
