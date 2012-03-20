@@ -242,7 +242,7 @@ class LinkBalancerSim(Simulation):
             a.sync_toward(b)
 
     def run(self, workload, sync_period=0, step_size=1, ignore_remaining=False,
-            show_graph=False):
+            show_graph=False, staleness=0):
         """
         Run the full simulation with new workload definition
 
@@ -252,6 +252,9 @@ class LinkBalancerSim(Simulation):
         step_size: amount of time to step forward on each iteration of
             simulation metrics computation
         time_now: time at which metrics are collected for the graph's state
+        staleness: Amount of time the NOS lags behind the physical network
+            a version of self.graph from (arr_time - stalenes) will be
+            presented to each controller 
         """
         all_metrics = {}
         for fcn in self.metric_fcns:
@@ -261,6 +264,10 @@ class LinkBalancerSim(Simulation):
         arr_time = 0
         last_sync = 0
         debugcounter = 0
+        # Keep a queue of stale graphs representing graph state from earlier in
+        # the simulation
+        stalegraphs = []
+        stalegraphs.append(self.graph.copy())
 
         # Store positions so each run step is displayed consistently.
         # pos is a dict from node names to (x, y) pairs in [0, 1].
@@ -279,12 +286,23 @@ class LinkBalancerSim(Simulation):
                              str(sw), str(util), str(duration))
                 logging.debug("[%s]", str(self.graph.edges(data=True)))
 
+
                 # Free all resources that ended before or at arr_time
                 self.free_resources(arr_time)
                 # Let every controller learn its state from the topology
+                if staleness > 0: 
+                    if staleness < arr_time:
+                        stalegraph = stalegraphs.pop(0)
+                    else:
+                        stalegraph = stalegraphs[0]
+
                 for ctrl in self.ctrls:
                     ctrl.free_resources(arr_time)
-                    ctrl.update_my_state(self.graph)
+                    if staleness > 0: 
+                        ctrl.update_my_state(stalegraph)
+                    else:
+                        ctrl.update_my_state(self.graph)
+
                 # Check if sync is necessary
                 time_elapsed_since_sync = arr_time - last_sync
                 if ((sync_period != None) and time_elapsed_since_sync >= sync_period):
@@ -292,6 +310,7 @@ class LinkBalancerSim(Simulation):
                     logging.debug("[%s] %s", str(arr_time), "Synced all ctrls")
                     if sync_period > 0:
                         last_sync = arr_time - (time_elapsed_since_sync % sync_period)
+
 
                 # Allocate resrouces
                 ctrl = self.sw_to_ctrl[sw]
@@ -306,6 +325,10 @@ class LinkBalancerSim(Simulation):
                 if len(workload) > 0:
                     arr_time = workload[0][0]
                     new_reqs.append([sw, util, duration])
+                    # Queue up old versions of the sim.graph until we've passed 
+                    # [staeleness] timesteps
+                    if staleness > 0:
+                        stalegraphs.append(self.graph.copy())
                 else:
                     arr_time=time_now
                     self.free_resources(arr_time)
@@ -345,7 +368,8 @@ class LinkBalancerSim(Simulation):
         return all_metrics
 
     def run_and_trace(self, name, workload, old=False, sync_period=0,
-                      step_size=1, ignore_remaining=False, show_graph=False):
+                      step_size=1, ignore_remaining=False, show_graph=False,
+                      staleness=0):
         """
         Run and produce a log of the simulation for each timestep
         Convert an old format workload to new format if old=TRUE
@@ -371,10 +395,12 @@ class LinkBalancerSim(Simulation):
             print >>f, json.dumps(workload,sort_keys=True, indent=4)
             f.close()
             metrics = self.run(workload, sync_period, step_size,
-                               ignore_remaining, show_graph=show_graph)
+                               ignore_remaining, show_graph=show_graph,
+                               staleness=staleness)
         else:
             metrics = self.run(workload, sync_period, step_size,
-                               ignore_remaining, show_graph=show_graph)
+                               ignore_remaining, show_graph=show_graph,
+                               staleness=staleness)
 
         f = open(filename + '.metrics', 'w')
         print >>f, json.dumps(metrics, sort_keys=True, indent=4)

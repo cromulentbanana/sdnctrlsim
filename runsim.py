@@ -17,11 +17,12 @@ logger= logging.getLogger(__name__)
 def main():
 #    demo_strictly_local_ctrls()
     for demand in [8,16,32,64,128]:
-        sync_improves_metric(max_demand=demand)
+        for staleness in [0,1,2]:
+            sync_improves_metric(max_demand=demand, staleness=staleness)
         for greedylimit in [0,0.25,0.5,0.75,1]:
             compare_greedy_dist_to_centralized(max_demand=demand, greedylimit=greedylimit)
 #    synced_dist_equals_central()
-    compare_random_dist_to_centralized()
+#    compare_random_dist_to_centralized()
 #    plot.plot_timeseries()
 #    plot.plot_boxplot()
 
@@ -47,7 +48,8 @@ def demo_strictly_local_ctrls(max_demand=8, show_graph=False):
                           show_graph=show_graph)
         logger.info("ending %s", myname)
 
-def sync_improves_metric(period=32, max_demand=200, show_graph=False):
+def sync_improves_metric(period=32, max_demand=200, show_graph=False,
+                         staleness=0):
     """Evalute the value of synchronization for a LinkBalanerCtrl by showing
     its effect on performance metric. We expect that for a workload which
     imparts server link imbalance across multiple domains, syncing will help
@@ -68,7 +70,7 @@ def sync_improves_metric(period=32, max_demand=200, show_graph=False):
         ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
         sim.run_and_trace(myname, workload, old=True, sync_period=sync_period,
-                          show_graph=show_graph)
+                          show_graph=show_graph, staleness=staleness)
         logger.info("ending %s", myname)
 
 
