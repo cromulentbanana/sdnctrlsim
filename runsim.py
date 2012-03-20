@@ -57,9 +57,10 @@ def sync_improves_metric(period=32, max_demand=200, show_graph=False,
 
     timesteps = period * 4
     for sync_period in range(0, timesteps):
-        myname = '%(fname)s_%(demand)d_%(num)02d' % {"fname": sys._getframe().f_code.co_name,
+        myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
                                                      "demand": max_demand,
-                                                     "num": sync_period}
+                                                     "num": sync_period,
+                                                     "staleness": staleness}
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                         period=period, offset=period/2.0,
