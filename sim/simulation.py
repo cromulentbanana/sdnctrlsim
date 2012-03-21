@@ -284,7 +284,7 @@ class LinkBalancerSim(Simulation):
                 funname = sys._getframe().f_code.co_name
                 logging.debug("[%s] [%s] [%s] [%s] [%s]", funname, str(arr_time),
                              str(sw), str(util), str(duration))
-                logging.debug("[%s]", str(self.graph.edges(data=True)))
+                #logging.debug("[%s]", str(self.graph.edges(data=True)))
 
 
                 # Free all resources that ended before or at arr_time
@@ -418,13 +418,15 @@ class LinkBalancerSim(Simulation):
         return metrics
 
     def simulation_trace(self, graph, time_step, new_reqs):
-      result = OrderedDict([
+        result = OrderedDict([
          ("time", time_step),
          ("new_reqs", new_reqs),
          ("servers",  map(lambda(x): (x, self.server_utilization(x)), self.servers)),
          ("ingress",  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows)),
-         ("links",  graph.edges(data=True))
+         ("PN view", str(self.graph.edges(data=True))) # Physical Network State
          ]
-      )
-      return result
+        )
+        for ctrl in self.ctrls:
+            result[str(ctrl)] = str(ctrl.graph.edges(data=True)) # distributed NIB state
+        return result
 

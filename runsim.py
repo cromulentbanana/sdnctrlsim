@@ -5,11 +5,28 @@
 import argparse
 import logging
 import logging.config
+from math import log
 #import plot #automatically plot selected ouputs directly after running
 from sim.simulation import LinkBalancerSim
 from sim.workload import dual_offset_workload, sawtooth, wave
 import sys
 from test.test_helper import two_ctrls, two_random_ctrls, two_greedy_ctrls, two_switch_topo, strictly_local_ctrls
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--demand', '-d',
+                    help="max demand values",
+                    action="store",
+                    nargs='+',
+                    dest="demands")
+parser.add_argument('--staleness', '-s',
+                    help="staleness values",
+                    action="store",
+                    nargs='+',
+                    dest="stalenesses")
+args = parser.parse_args()
+
+
+
 
 logging.config.fileConfig('setup.cfg')
 logger= logging.getLogger(__name__)
@@ -17,7 +34,7 @@ logger= logging.getLogger(__name__)
 def main():
 #    demo_strictly_local_ctrls()
     for demand in [8,16,32,64,128]:
-        for staleness in [0,1,2]:
+        for staleness in [0,1]:
             sync_improves_metric(max_demand=demand, staleness=staleness)
         for greedylimit in [0,0.25,0.5,0.75,1]:
             compare_greedy_dist_to_centralized(max_demand=demand, greedylimit=greedylimit)
@@ -32,8 +49,8 @@ def demo_strictly_local_ctrls(max_demand=8, show_graph=False):
 
     #TODO: demonstrate with more than 1 srv per controller domain
     period = 16
-    timesteps = period * 2
-    for sync_period in range(0, timesteps):
+    timesteps = period * 4
+    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
         myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
@@ -56,7 +73,7 @@ def sync_improves_metric(period=32, max_demand=200, show_graph=False,
     improve the rmse_server metric."""
 
     timesteps = period * 4
-    for sync_period in range(0, timesteps):
+    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
         myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
                                                      "demand": max_demand,
                                                      "num": sync_period,
@@ -80,8 +97,8 @@ def synced_dist_equals_central(period=8, max_demand=4, show_graph=False):
     yields exactly the same result as the same toplology and workload with a
     single controller."""
 
-    timesteps = period * 2
-    for sync_period in range(0, timesteps):
+    timesteps = period * 4
+    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
         myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
@@ -98,8 +115,8 @@ def synced_dist_equals_central(period=8, max_demand=4, show_graph=False):
 
 def compare_random_dist_to_centralized(period=16, max_demand=8, show_graph=False):
     """ """
-    timesteps = period * 2
-    for sync_period in range(0, timesteps):
+    timesteps = period * 4
+    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
         myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
@@ -122,8 +139,8 @@ def compare_greedy_dist_to_centralized(period=16, max_demand=30,
     """Ensure that a distributed controller simulation run with sync_period=0
     yields exactly the same result as the same toplology and workload with a
     single controller."""
-    timesteps = period * 2
-    for sync_period in range(0, timesteps):
+    timesteps = period * 4
+    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
         myname = '%(fname)s_%(demand)d_%(gl)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name,
                                                      "demand": max_demand,
                                                      "gl": str(greedylimit),
