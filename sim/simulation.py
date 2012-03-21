@@ -423,10 +423,12 @@ class LinkBalancerSim(Simulation):
          ("new_reqs", new_reqs),
          ("servers",  map(lambda(x): (x, self.server_utilization(x)), self.servers)),
          ("ingress",  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows)),
-         ("PN view", str(self.graph.edges(data=True))) # Physical Network State
+         #("PN view", str(self.graph.edges(data=True))) # Physical Network State
+         ("PN view", [v['used'] for (s,d,v) in (self.graph.edges(data=True))]) # Physical Network State
          ]
         )
         for ctrl in self.ctrls:
-            result[str(ctrl)] = str(ctrl.graph.edges(data=True)) # distributed NIB state
+            #result[str(ctrl)] = str(ctrl.graph.edges(data=True)) # distributed NIB state
+            result[str(ctrl)] = [v['used'] for (s,d,v) in (ctrl.graph.edges(data=True))] # distributed NIB state
         return result
 
