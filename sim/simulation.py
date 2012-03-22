@@ -424,7 +424,8 @@ class LinkBalancerSim(Simulation):
         """
         # Euclidean distance between: two NIB replicas, NIB replica 0 and phys
         # network, and NIB replica 1 and phys network
-        assert len(self.ctrls) == 2
+        if len(self.ctrls) != 2:
+            return None
 
         c0 = [v['used'] for (s,d,v) in (self.ctrls[0].graph.edges(data=True))]
         c1 = [v['used'] for (s,d,v) in (self.ctrls[1].graph.edges(data=True))]

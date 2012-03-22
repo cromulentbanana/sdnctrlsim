@@ -139,6 +139,7 @@ class TestTwoSwitch(unittest.TestCase):
         metrics = sim.run_and_trace(myname, workload, sync_period=None, step_size=1, ignore_remaining=False)
 
         del metrics["simulation_trace"]
+        del metrics["state_distances"]
         # The first run will be unbalanced because there's only 1 flow
         # Ditto with 2nd to last timestep, as there's only one active flow
         # remaining. Unit workload will last ((numreqs - 1 ) + duration) steps
