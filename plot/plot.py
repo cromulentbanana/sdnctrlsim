@@ -42,15 +42,59 @@ def main():
             j = json.loads("".join(ff.readlines()).strip())
             metrics.append((filename,j))
             ff.close()
-        plot_timeseries(metrics)
-        plot_boxplot(metrics)
+        plot_rmse_timeseries(metrics)
+        plot_state_distances_timeseries(metrics)
+        plot_rmse_boxplot(metrics)
     else:
         parser.print_help()
 
-def plot_timeseries(metrics, saveplot=False):
+
+def plot_state_distances_timeseries(metrics, saveplot=False):
     cgen = ph.colorGenerator()
     fgen = ph.fmtGenerator()
     for filename, m in metrics:
+        d_nos = [ a for (a,b,c) in m["state_distances"]]
+        d_c0_pn = [ b for (a,b,c) in m["state_distances"]]
+        d_c1_pn = [ c for (a,b,c) in m["state_distances"]]
+        trace = m["simulation_trace"]
+        ingress = [ i['ingress'] for i in trace ]
+        ingress_switches = {}
+        ingress_switch_vals = {}
+        # collect all switches which show ingress at some point
+        for i in ingress:
+            for k,v in i.iteritems():
+               ingress_switches.setdefault(k,[])
+
+        for i in ingress:
+            for switch in ingress_switches.keys():
+                if switch in i.keys():
+                    value = i[switch]
+                else:
+                    value = 0
+                ingress_switch_vals.setdefault(switch,[]).append(value)
+
+        plt.plot(range(len(d_nos)), d_nos, fgen.next()+'-', label="d_nos"+str(filename), color=cgen.next())
+        plt.plot(range(len(d_c0_pn)), d_c0_pn, fgen.next()+'-', label="d_c0_pn"+str(filename), color=cgen.next())
+        plt.plot(range(len(d_c1_pn)), d_c1_pn, fgen.next()+'-', label="d_c1_pn"+str(filename), color=cgen.next())
+
+    plt.title("State Distance Timeseries " + str(filename))
+    plt.ylabel("")
+    plt.xlabel("Time (ticks)")
+    plt.grid()
+    plt.legend()
+
+    if saveplot:
+        plt.savefig(saveplot)
+    else:
+        plt.show()
+
+
+
+def plot_rmse_timeseries(metrics, saveplot=False):
+    cgen = ph.colorGenerator()
+    fgen = ph.fmtGenerator()
+    for filename, m in metrics:
+        d_nos = [ a for (a,b,c) in m["state_distances"]]
         rmsesrv = m["rmse_servers"]
         trace = m["simulation_trace"]
         ingress = [ i['ingress'] for i in trace ]
@@ -72,8 +116,9 @@ def plot_timeseries(metrics, saveplot=False):
         for k, v in ingress_switch_vals.iteritems():
             plt.plot(range(len(v)), v, fgen.next()+'--', label="units wkload ingress at " + k, color=cgen.next())
         plt.plot(range(len(rmsesrv)), rmsesrv, fgen.next()+'-', label="RMSE"+str(filename), color=cgen.next())
+        plt.plot(range(len(d_nos)), d_nos, fgen.next()+'-', label="d_nos"+str(filename), color=cgen.next())
 
-    plt.title("Timeseries " + str(filename))
+    plt.title("RMSE Timeseries " + str(filename))
     plt.ylabel("")
     plt.xlabel("Time (ticks)")
     plt.grid()
@@ -84,7 +129,7 @@ def plot_timeseries(metrics, saveplot=False):
     else:
         plt.show()
 
-def plot_boxplot(metrics, saveplot=False):
+def plot_rmse_boxplot(metrics, saveplot=False):
     cgen = ph.colorGenerator()
     fgen = ph.fmtGenerator()
     data = []

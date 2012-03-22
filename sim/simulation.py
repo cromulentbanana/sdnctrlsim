@@ -132,7 +132,7 @@ class LinkBalancerSim(Simulation):
     def __init__(self, *args, **kwargs):
         super(LinkBalancerSim, self).__init__(*args, **kwargs)
         self.metric_fcns = [self.rmse_links, self.rmse_servers,
-                            self.simulation_trace]
+                            self.state_distances, self.simulation_trace]
 
     def metrics(self, graph=None):
         """Return dict of metric names to values"""
@@ -417,18 +417,35 @@ class LinkBalancerSim(Simulation):
 
         return metrics
 
+    def state_distances(self, graph, time_step, new_reqs):
+        """ Calcuate the pairwise euclidean distance between Physical network
+        and each NIB in the simulation. Assumes a maximum of two NIBs
+        (controllers)
+        """
+        # Euclidean distance between: two NIB replicas, NIB replica 0 and phys
+        # network, and NIB replica 1 and phys network
+        assert len(self.ctrls) == 2
+
+        c0 = [v['used'] for (s,d,v) in (self.ctrls[0].graph.edges(data=True))]
+        c1 = [v['used'] for (s,d,v) in (self.ctrls[1].graph.edges(data=True))]
+        pn = [v['used'] for (s,d,v) in (self.graph.edges(data=True))]
+
+        d_c0_c1 = sqrt(sum([(v1-v2)**2 for (v1,v2) in zip(c0,c1)]))
+        d_c0_pn = sqrt(sum([(v1-v2)**2 for (v1,v2) in zip(c0,pn)]))
+        d_c1_pn = sqrt(sum([(v1-v2)**2 for (v1,v2) in zip(c1,pn)]))
+
+        return (d_c0_c1, d_c0_pn, d_c1_pn)
+
     def simulation_trace(self, graph, time_step, new_reqs):
         result = OrderedDict([
          ("time", time_step),
          ("new_reqs", new_reqs),
          ("servers",  map(lambda(x): (x, self.server_utilization(x)), self.servers)),
          ("ingress",  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows)),
-         #("PN view", str(self.graph.edges(data=True))) # Physical Network State
-         ("PN view", [v['used'] for (s,d,v) in (self.graph.edges(data=True))]) # Physical Network State
+         ("pn_view", [v['used'] for (s,d,v) in (self.graph.edges(data=True))])
          ]
         )
+        # distributed NIB state
         for ctrl in self.ctrls:
-            #result[str(ctrl)] = str(ctrl.graph.edges(data=True)) # distributed NIB state
-            result[str(ctrl)] = [v['used'] for (s,d,v) in (ctrl.graph.edges(data=True))] # distributed NIB state
+            result['%s_view'%(ctrl.name)] = [v['used'] for (s,d,v) in (ctrl.graph.edges(data=True))]
         return result
-
