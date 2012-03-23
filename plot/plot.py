@@ -8,6 +8,7 @@ Input: filename(s) of the ctrlsim output in json format
 Output: timeseries
 '''
 
+import plot_defaults
 import argparse
 import json
 import matplotlib.pyplot as plt
