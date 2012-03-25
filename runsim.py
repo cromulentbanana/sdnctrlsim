@@ -10,7 +10,7 @@ from math import log
 from sim.simulation import LinkBalancerSim
 from sim.workload import dual_offset_workload, sawtooth, wave
 import sys
-from test.test_helper import two_ctrls, two_random_ctrls, two_greedy_ctrls, two_switch_topo, strictly_local_ctrls
+from test.test_helper import two_ctrls, two_separate_state_ctrls, two_random_ctrls, two_greedy_ctrls, two_switch_topo, strictly_local_ctrls
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--demand', '-d',
@@ -35,6 +35,7 @@ def main():
 #    demo_strictly_local_ctrls()
     for demand in [8,16,32,64,128]:
         for staleness in [0,1]:
+            sync_separate_state_improves_metric(max_demand=demand, staleness=staleness)
             sync_improves_metric(max_demand=demand, staleness=staleness)
         for greedylimit in [0,0.25,0.5,0.75,1]:
             compare_greedy_dist_to_centralized(max_demand=demand, greedylimit=greedylimit)
@@ -48,9 +49,9 @@ def demo_strictly_local_ctrls(max_demand=8, show_graph=False):
     LinkBalanerCtrl only handles requests within its own domain"""
 
     #TODO: demonstrate with more than 1 srv per controller domain
-    period = 16
+    period = 32
     timesteps = period * 4
-    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
+    for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
         myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
@@ -65,7 +66,7 @@ def demo_strictly_local_ctrls(max_demand=8, show_graph=False):
                           show_graph=show_graph)
         logger.info("ending %s", myname)
 
-def sync_improves_metric(period=32, max_demand=200, show_graph=False,
+def sync_improves_metric(period=64, max_demand=200, show_graph=False,
                          staleness=0):
     """Evalute the value of synchronization for a LinkBalanerCtrl by showing
     its effect on performance metric. We expect that for a workload which
@@ -73,7 +74,7 @@ def sync_improves_metric(period=32, max_demand=200, show_graph=False,
     improve the rmse_server metric."""
 
     timesteps = period * 4
-    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
+    for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
         myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
                                                      "demand": max_demand,
                                                      "num": sync_period,
@@ -92,13 +93,44 @@ def sync_improves_metric(period=32, max_demand=200, show_graph=False,
         logger.info("ending %s", myname)
 
 
-def synced_dist_equals_central(period=8, max_demand=4, show_graph=False):
+
+def sync_separate_state_improves_metric(period=64, max_demand=200, show_graph=False,
+                         staleness=0):
+    """
+    Same as above, except using separate state tracking controllers which keep
+    synchronization-shared state from extra-domain links sepatate from
+    locally-originating inferred "contributed" extra-domain link utilization
+    """
+
+    timesteps = period * 4
+    for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
+        myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
+                                                     "demand": max_demand,
+                                                     "num": sync_period,
+                                                     "staleness": staleness}
+        logger.info("starting %s", myname)
+        workload = dual_offset_workload(switches=['sw1', 'sw2'],
+                                        period=period, offset=period/2.0,
+                                        max_demand=max_demand, size=1,
+                                    duration=2, timesteps=timesteps,
+                                    workload_fcn=wave)
+
+        ctrls = two_separate_state_ctrls()
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        sim.run_and_trace(myname, workload, old=True, sync_period=sync_period,
+                          show_graph=show_graph, staleness=staleness)
+        logger.info("ending %s", myname)
+
+
+
+
+def synced_dist_equals_central(period=64, max_demand=4, show_graph=False):
     """Ensure that a distributed controller simulation run with sync_period=0
     yields exactly the same result as the same toplology and workload with a
     single controller."""
 
     timesteps = period * 4
-    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
+    for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
         myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
@@ -113,10 +145,10 @@ def synced_dist_equals_central(period=8, max_demand=4, show_graph=False):
                           show_graph=show_graph)
         logger.info("ending %s", myname)
 
-def compare_random_dist_to_centralized(period=16, max_demand=8, show_graph=False):
+def compare_random_dist_to_centralized(period=64, max_demand=8, show_graph=False):
     """ """
     timesteps = period * 4
-    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
+    for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
         myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
@@ -134,13 +166,13 @@ def compare_random_dist_to_centralized(period=16, max_demand=8, show_graph=False
    
 
 
-def compare_greedy_dist_to_centralized(period=16, max_demand=30,
+def compare_greedy_dist_to_centralized(period=64, max_demand=30,
                                        greedylimit=0.5, show_graph=False):
     """Ensure that a distributed controller simulation run with sync_period=0
     yields exactly the same result as the same toplology and workload with a
     single controller."""
     timesteps = period * 4
-    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
+    for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
         myname = '%(fname)s_%(demand)d_%(gl)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name,
                                                      "demand": max_demand,
                                                      "gl": str(greedylimit),

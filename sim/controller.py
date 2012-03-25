@@ -149,7 +149,7 @@ class LinkBalancerCtrl(Controller):
                 dstctrl.graph[u][v]['used'] = self.graph[u][v]['used']
                 dstctrl.graph[u][v]['timestamp'] = timestep
 
-        #logging.debug("%s sync to %s" % (self.name, dstctrl.name))
+        logging.debug("%s syncs toward %s" % (self.name, dstctrl.name))
 
 
     def get_srv_paths(self, sw, graph=None, local=False):
@@ -316,6 +316,78 @@ class GreedyLinkBalancerCtrl(LinkBalancerCtrl):
 
         logging.debug(str(bestpath))
         return bestpath
+
+class SeparateStateLinkBalancerCtrl(LinkBalancerCtrl):
+    """
+    This controller keeps extra-domain link state obtained through sync events
+    separate from extra-domain state inferred through tracking its contribution
+    to extra-domain contributed load.
+    """
+    def __init__(self, *args, **kwargs):
+        super(SeparateStateLinkBalancerCtrl, self).__init__(*args, **kwargs)
+
+
+    def sync_toward(self, dstctrl, specificedges=None, timestep=None):
+        """
+        Share the utilization state of links goverend by this controller with
+        another controller in a "push" fashion Optionally specify only specific
+        links (edges) to share with the other dstctrl
+        """
+        if (specificedges):
+            mylinks = specificedges
+        else:
+            mylinks = self.mylinks
+
+        for link in mylinks:
+            u, v = link
+            # A controller should only accept state updates to links that do
+            # not belong to its own domain.
+            if not (dstctrl.graph[u][v].get('mylink')):
+                dstctrl.graph[u][v]['sync_learned'] = self.graph[u][v]['used']
+                dstctrl.graph[u][v]['timestamp'] = timestep
+
+        logging.debug("%s syncs toward %s" % (self.name, dstctrl.name))
+
+
+    def compute_path_metric(self, sw, path, util, time_now):
+        """
+        Return a pathmetric rating the utilization of the path pathmetric is a
+        real number in [0,1] which is the max (worst) of all linkmetrics for all
+        links in the path 
+        """
+        pathmetric = 1
+        linkmetrics = []
+        links = zip(path[:-1], path[1:])
+        # calculate available capacity for each link in path
+        for link in links:
+            u, v = link
+            # Use the last-learned-via-sync value for a link
+            if 'sync_learned' in self.graph[u][v]:
+                used1 = self.graph[u][v]['sync_learned'] + util
+                used2 = self.graph[u][v]['used'] + util
+                # 'used' is a strict lower bound for 'sync_learned'
+                used = max(used1,used2)
+            else:
+                used = self.graph[u][v]['used'] + util
+            capacity = self.graph[u][v]['capacity']
+            linkmetric = float(used) / capacity
+            # If the controller THINKS it would oversubscribe this link
+            if linkmetric > 1:
+                logging.info("[%s] MAY be OVERSUBSCRIBED [%f] at switch [%s]", str(time_now), linkmetric,  str(sw))
+                break
+            else:
+                linkmetrics.append(linkmetric)
+
+        # We define pathmetric to be the worst link metric in path
+        if len(linkmetrics) > 0:
+            pathmetric = max(linkmetrics)
+
+        funname = sys._getframe().f_code.co_name
+        logging.debug("[%s] [%s] [%s] [%s]", funname, str(time_now), str(self),
+                     str((path, linkmetrics)))
+        return (pathmetric, len(links))
+
+
 
 class RandomChoiceCtrl(LinkBalancerCtrl):
     """
