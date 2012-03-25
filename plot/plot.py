@@ -25,10 +25,11 @@ parser.add_argument('--dummy-data', '-d',
                     default=False,
                     action='store_true',
                     dest="dummydata")
-parser.add_argument('--out', '-o',
+parser.add_argument('--savefig', '-s',
                     help="Output pdf file for the plot.",
-                    default=None,
-                    dest="out")
+                    default=False,
+                    action='store_true',
+                    dest="savefig")
 
 args = parser.parse_args()
 
@@ -43,9 +44,9 @@ def main():
             j = json.loads("".join(ff.readlines()).strip())
             metrics.append((filename,j))
             ff.close()
-        plot_rmse_timeseries(metrics)
-        plot_state_distances_timeseries(metrics)
-        plot_rmse_boxplot(metrics)
+        plot_rmse_timeseries(metrics, saveplot=args.savefig)
+        plot_state_distances_timeseries(metrics, saveplot=args.savefig)
+        plot_rmse_boxplot(metrics, saveplot=args.savefig)
     else:
         parser.print_help()
 
@@ -85,7 +86,7 @@ def plot_state_distances_timeseries(metrics, saveplot=False):
     plt.legend()
 
     if saveplot:
-        plt.savefig(saveplot)
+        plt.savefig(str(filename)+".pdf")
     else:
         plt.show()
 
@@ -117,7 +118,6 @@ def plot_rmse_timeseries(metrics, saveplot=False):
         for k, v in ingress_switch_vals.iteritems():
             plt.plot(range(len(v)), v, fgen.next()+'--', label="units wkload ingress at " + k, color=cgen.next())
         plt.plot(range(len(rmsesrv)), rmsesrv, fgen.next()+'-', label="RMSE"+str(filename), color=cgen.next())
-        plt.plot(range(len(d_nos)), d_nos, fgen.next()+'-', label="d_nos"+str(filename), color=cgen.next())
 
     plt.title("RMSE Timeseries " + str(filename))
     plt.ylabel("")
@@ -126,7 +126,7 @@ def plot_rmse_timeseries(metrics, saveplot=False):
     plt.legend()
 
     if saveplot:
-        plt.savefig(saveplot)
+        plt.savefig(str(filename)+".pdf")
     else:
         plt.show()
 
@@ -163,7 +163,44 @@ def plot_rmse_boxplot(metrics, saveplot=False):
     plt.legend()
 
     if saveplot:
-        plt.savefig(saveplot)
+        plt.savefig(str(filename)+".pdf")
+    else:
+        plt.show()
+
+def plot_rmse_boxplot(metrics, saveplot=False):
+    cgen = ph.colorGenerator()
+    fgen = ph.fmtGenerator()
+    data = []
+    for filename, m in metrics:
+        data.append(m["rmse_servers"])
+        trace = m["simulation_trace"]
+        ingress = [ i['ingress'] for i in trace ]
+        ingress_switches = {}
+        ingress_switch_vals = {}
+        # collect all switches which show ingress at some point
+        for i in ingress:
+            for k,v in i.iteritems():
+               ingress_switches.setdefault(k,[])
+
+        for i in ingress:
+            for switch in ingress_switches.keys():
+                if switch in i.keys():
+                    value = i[switch]
+                else:
+                    value = 0
+                ingress_switch_vals.setdefault(switch,[]).append(value)
+
+
+    plt.boxplot(data)
+    plt.title("Boxplot" + str(filename))
+    plt.ylabel("")
+    #TODO ennumerate boxplots
+    plt.xlabel("sync_period")
+    plt.grid()
+    plt.legend()
+
+    if saveplot:
+        plt.savefig(str(filename)+".pdf")
     else:
         plt.show()
 

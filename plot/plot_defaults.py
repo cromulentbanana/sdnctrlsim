@@ -29,7 +29,7 @@ HLINE_LINEWIDTH = 2
 rc('axes', **{'labelsize' : 'large',
               'titlesize' : 'large',
               'grid' : True})
-rc('legend', **{'fontsize': 'xx-large'})
+rc('legend', **{'fontsize': 'large'})
 rcParams['axes.labelsize'] = AXES_LABELSIZE
 rcParams['xtick.labelsize'] = TICK_LABELSIZE
 rcParams['ytick.labelsize'] = TICK_LABELSIZE
