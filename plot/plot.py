@@ -76,10 +76,23 @@ def plot_state_distances_timeseries(metrics, saveplot=False):
                 ingress_switch_vals.setdefault(switch,[]).append(value)
 
         plt.plot(range(len(d_nos)), d_nos, fgen.next()+'-', label="d_nos"+str(filename), color=cgen.next())
+
+    plt.title("NOS-NOS Distance Timeseries " + str(filename))
+    plt.ylabel("")
+    plt.xlabel("Time (ticks)")
+    plt.grid()
+    plt.legend()
+
+    if saveplot:
+        plt.savefig(str(filename)+".pdf")
+    else:
+        plt.show()
+
+        plt.close('all')
         plt.plot(range(len(d_c0_pn)), d_c0_pn, fgen.next()+'-', label="d_c0_pn"+str(filename), color=cgen.next())
         plt.plot(range(len(d_c1_pn)), d_c1_pn, fgen.next()+'-', label="d_c1_pn"+str(filename), color=cgen.next())
 
-    plt.title("State Distance Timeseries " + str(filename))
+    plt.title("NOS-PN Distance Timeseries " + str(filename))
     plt.ylabel("")
     plt.xlabel("Time (ticks)")
     plt.grid()
