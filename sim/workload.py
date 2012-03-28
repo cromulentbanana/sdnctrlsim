@@ -5,6 +5,7 @@
 
 from math import floor, pi, sin
 from random import choice, randint, random
+import random
 import unittest
 
 
@@ -13,8 +14,8 @@ def unit_workload(sw, size, duration, numreqs):
     Return workload description with unit demands and unit length.
 
     sw: list of switch names
-    size: data demand (unitless)
-    duration: length of each request (unitless)
+    size: link utilization (unitless)
+    duration: time until flow terminates (unitless)
     numreq: number of requests
     returns: workload structure
         # Workload is a list of tuples
@@ -28,6 +29,30 @@ def unit_workload(sw, size, duration, numreqs):
 
     return workload
 
+def expo_workload(switches, interarrival_alpha=10, duration_alpha=5, workload_duration=32):
+    """
+    Pareto distributed inter-arrival time with weibull demand distribution
+
+    sw: list of switch names
+    max_demand: link utilization (unitless)
+    duration: time until flow terminates (unitless)
+    numreq: number of requests
+    returns: workload structure
+        # Workload is a list of tuples
+        # Each list element corresponds to one request arrival:
+        # (time of arrival, arriving at switch, size, duration)
+    """
+    workload = []
+    for switch in switches:
+        i = 0
+        while i < workload_duration:
+            i += random.expovariate(interarrival_alpha)
+            duration = int(random.weibullvariate(duration_alpha,1))+1
+            size = 1
+            workload.append((i, switch, size, duration))
+        
+    workload = sorted(workload, key=lambda req: req[0]) 
+    return workload
 
 def random_int_workload(sw, size, duration, numreqs):
     """
@@ -110,6 +135,7 @@ def wave(t, period, offset, max_demand):
     phase_radians = phase_unitless / float(period) * (2.0 * pi)
     raw_val = (sin(phase_radians) + 1.0) / 2.0
     return raw_val * max_demand
+
 
 
 def dual_offset_workload(switches, period, offset, max_demand, size,

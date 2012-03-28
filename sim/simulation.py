@@ -440,13 +440,13 @@ class LinkBalancerSim(Simulation):
     def simulation_trace(self, graph, time_step, new_reqs):
         result = OrderedDict([
          ("time", time_step),
-         ("new_reqs", new_reqs),
+         #("new_reqs", new_reqs),
          ("servers",  map(lambda(x): (x, self.server_utilization(x)), self.servers)),
          ("ingress",  sum_grouped_by(lambda(flow): (flow[1][-1], flow[2]), self.active_flows)),
-         ("pn_view", [v['used'] for (s,d,v) in (self.graph.edges(data=True))])
+         ("pn_view", [(v['used'], s, d) for (s,d,v) in (self.graph.edges(data=True))])
          ]
         )
         # distributed NIB state
         for ctrl in self.ctrls:
-            result['%s_view'%(ctrl.name)] = [v['used'] for (s,d,v) in (ctrl.graph.edges(data=True))]
+            result['%s_view'%(ctrl.name)] = [(v['used'], s, d) for (s,d,v) in (ctrl.graph.edges(data=True))]
         return result

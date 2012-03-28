@@ -8,7 +8,7 @@ import logging.config
 from math import log
 #import plot #automatically plot selected ouputs directly after running
 from sim.simulation import LinkBalancerSim
-from sim.workload import dual_offset_workload, sawtooth, wave
+from sim.workload import dual_offset_workload, sawtooth, wave, expo_workload
 import sys
 from test.test_helper import two_ctrls, two_separate_state_ctrls, two_random_ctrls, two_greedy_ctrls, two_switch_topo, strictly_local_ctrls
 
@@ -33,8 +33,11 @@ logger= logging.getLogger(__name__)
 
 def main():
 #    demo_strictly_local_ctrls()
-    for demand in [8,16,32,64,128]:
-        for staleness in [0,1]:
+    for demand in [32,64,128]:
+        #for staleness in [0,1]:
+        for staleness in [0]:
+            sync_expo_improves_metric(max_demand=demand, staleness=staleness)
+            sync_expo_separate_improves_metric(max_demand=demand, staleness=staleness)
             sync_separate_state_improves_metric(max_demand=demand, staleness=staleness)
             sync_improves_metric(max_demand=demand, staleness=staleness)
         for greedylimit in [0,0.25,0.5,0.75,1]:
@@ -91,6 +94,51 @@ def sync_improves_metric(period=64, max_demand=200, show_graph=False,
         sim.run_and_trace(myname, workload, old=True, sync_period=sync_period,
                           show_graph=show_graph, staleness=staleness)
         logger.info("ending %s", myname)
+
+def sync_expo_improves_metric(max_demand, timesteps=64, show_graph=False, staleness=0):
+    """Evalute the value of synchronization for a LinkBalanerCtrl by showing
+    its effect on performance metric. We expect that for a workload which
+    imparts server link imbalance across multiple domains, syncing will help
+    improve the rmse_server metric."""
+
+    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
+        myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
+                                                     "demand": max_demand,
+                                                     "num": sync_period,
+                                                     "staleness": staleness}
+        logger.info("starting %s", myname)
+        workload = expo_workload(switches=['sw1', 'sw2'],
+                workload_duration=timesteps)
+                
+        ctrls = two_ctrls()
+        #ctrls = two_separate_state_ctrls()
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        sim.run_and_trace(myname, workload, old=False, sync_period=sync_period,
+                          show_graph=show_graph, staleness=staleness)
+        logger.info("ending %s", myname)
+
+def sync_expo_separate_improves_metric(max_demand, timesteps=64, show_graph=False, staleness=0):
+    """Evalute the value of synchronization for a LinkBalanerCtrl by showing
+    its effect on performance metric. We expect that for a workload which
+    imparts server link imbalance across multiple domains, syncing will help
+    improve the rmse_server metric."""
+
+    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
+        myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
+                                                     "demand": max_demand,
+                                                     "num": sync_period,
+                                                     "staleness": staleness}
+        logger.info("starting %s", myname)
+        workload = expo_workload(switches=['sw1', 'sw2'],
+                workload_duration=timesteps)
+                
+        #ctrls = two_ctrls()
+        ctrls = two_separate_state_ctrls()
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        sim.run_and_trace(myname, workload, old=False, sync_period=sync_period,
+                          show_graph=show_graph, staleness=staleness)
+        logger.info("ending %s", myname)
+
 
 
 

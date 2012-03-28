@@ -198,9 +198,9 @@ class LinkBalancerCtrl(Controller):
             used = self.graph[u][v]['used'] + util
             capacity = self.graph[u][v]['capacity']
             linkmetric = float(used) / capacity
-            # If we would oversubscribe this link
+            # If the controller estimates it would oversubscribe this link
             if linkmetric > 1:
-                logging.info("[%s] OVERSUBSCRIBED [%f] at switch [%s]", str(time_now), linkmetric,  str(sw))
+                logging.info("[%s] MAY be OVERSUBSCRIBED [%f] at switch [%s]", str(time_now), linkmetric,  str(sw))
                 break
             else:
                 linkmetrics.append(linkmetric)
@@ -322,9 +322,12 @@ class SeparateStateLinkBalancerCtrl(LinkBalancerCtrl):
     This controller keeps extra-domain link state obtained through sync events
     separate from extra-domain state inferred through tracking its contribution
     to extra-domain contributed load.
+    alpha: Scaling factor for redistributing the load across links between sync
+    events
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, alpha=0.3, *args, **kwargs):
         super(SeparateStateLinkBalancerCtrl, self).__init__(*args, **kwargs)
+        self.alpha = alpha
 
 
     def sync_toward(self, dstctrl, specificedges=None, timestep=None):
@@ -365,13 +368,20 @@ class SeparateStateLinkBalancerCtrl(LinkBalancerCtrl):
             if 'sync_learned' in self.graph[u][v]:
                 used1 = self.graph[u][v]['sync_learned'] + util
                 used2 = self.graph[u][v]['used'] + util
-                # 'used' is a strict lower bound for 'sync_learned'
-                used = max(used1,used2)
+                # ['used'] is a strict lower bound for ['sync_learned']
+                if used1 > used2: 
+                    used = used1
+                    logging.debug("[%s] using sync_learned value 1 [%f]", str(self.name), used1)
+                else:
+                    used = used2
+                    logging.debug("[%s] using sync_learned value 2 [%f]", str(self.name), used2)
             else:
+                logging.debug("[%s] using tracking value", str(self.name))
                 used = self.graph[u][v]['used'] + util
+
             capacity = self.graph[u][v]['capacity']
             linkmetric = float(used) / capacity
-            # If the controller THINKS it would oversubscribe this link
+            # If the controller estimates it would oversubscribe this link
             if linkmetric > 1:
                 logging.info("[%s] MAY be OVERSUBSCRIBED [%f] at switch [%s]", str(time_now), linkmetric,  str(sw))
                 break
@@ -387,6 +397,67 @@ class SeparateStateLinkBalancerCtrl(LinkBalancerCtrl):
                      str((path, linkmetrics)))
         return (pathmetric, len(links))
 
+    def find_best_path(self, paths, sw, util, duration, time_now):
+        bestpath = None
+        bestpathmetric = None # [0,1] lower means better path
+        bestpathlen = None # lower -> better path
+        candidatepaths = []
+        
+        # DEBUGGING FOR ANJA
+        edges = self.graph.edges(data=True)
+        myedges = [ (a+"-"+b,c['capacity'],c['used'],c.get('sync_learned', '')) for a,b,c in edges ]
+        myedges2 = [ (a+"-"+b,c['used']/c['capacity'],c.get('sync_learned',-1)/c['capacity']) for a,b,c in edges ]
+        
+        #logging.debug("ANJA : %s\nANJA", str(self.graph.edges(data=True)))
+        logging.debug("ANJA: %s", str(myedges))
+        logging.debug("ANJA: %s", str(myedges2))
+        # DEBUGGING FOR ANJA
+
+
+        for path in paths:
+            pathmetric, pathlen = self.compute_path_metric(sw, path, util, time_now)
+            candidatepaths.append((pathmetric, pathlen, path))
+       
+        logging.debug("ANJA pre-scaled PathMetrics: %s", str([ (a,c) for a,b,c in candidatepaths]))
+        # The pathmetrics for all n links should ideally be equal -- i.e. the
+        # average over all pathmetrics. (ideal-pathmetric) is the amount by
+        # which each pathmetric would need to change to balance the pathmetrics
+        # for all links. Alpha is a scaling factor to select
+        pathmetricsum = sum([k for k, l, m in candidatepaths])
+        ideal = pathmetricsum * 1.0 / len(candidatepaths)
+        scaledpaths = [] # used to keep log output for ANJA
+        for pathmetric, pathlen, path in candidatepaths:
+            scaledpathmetric = pathmetric + ((ideal - pathmetric) * self.alpha)
+            logging.debug("Find Best Path scaled: %s", str((scaledpathmetric, pathlen)))
+            scaledpaths.append((scaledpathmetric, path)) # used to keep output for ANJA
+        
+
+            #DESIGN CHOICE: We pick the path with the best pathmetric.
+            # If multiple path metrics tie, we pick the path with the shortest
+            # length
+            if (bestpathmetric == None):
+                bestpath = path
+                bestpathmetric = scaledpathmetric
+                bestpathlen = pathlen
+            elif (scaledpathmetric < bestpathmetric):
+                bestpath = path
+                bestpathmetric = scaledpathmetric
+                bestpathlen = pathlen
+            elif (scaledpathmetric == bestpathmetric and pathlen < bestpathlen):
+                bestpath = path
+                bestpathmetric = scaledpathmetric
+                bestpathlen = pathlen
+
+        if (bestpath == None):
+            return None
+
+        logging.debug("ANJA scaled PathMetrics: %s\nANJA", str([ (a,b) for a,b in scaledpaths]))
+        funname = sys._getframe().f_code.co_name
+        logging.debug("[%s] [%s] [%s] [%s] [%s] [%s]", 
+                     funname, str(time_now), str(self), str(bestpath),
+                     str(bestpathlen), str(bestpathmetric))
+
+        return (bestpath, bestpathmetric)
 
 
 class RandomChoiceCtrl(LinkBalancerCtrl):
