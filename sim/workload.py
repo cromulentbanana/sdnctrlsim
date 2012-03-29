@@ -3,11 +3,12 @@
 # Dan Levin <dlevin@net.t-labs.tu-berlin.de>
 # Brandon Heller <brandonh@stanford.edu>
 
+import json
+import logging
 from math import floor, pi, sin
 from random import choice, randint, random
 import random
 import unittest
-
 
 def unit_workload(sw, size, duration, numreqs):
     """
@@ -29,30 +30,45 @@ def unit_workload(sw, size, duration, numreqs):
 
     return workload
 
-def expo_workload(switches, interarrival_alpha=10, duration_alpha=5, workload_duration=32):
-    """
-    Pareto distributed inter-arrival time with weibull demand distribution
+def expo_workload(switches, timesteps, interarrival_alpha, duration_shape, filename='expo.workload'):
+    """ Exponentially distributed inter-arrival time with weibull demand distribution
 
     sw: list of switch names
     max_demand: link utilization (unitless)
     duration: time until flow terminates (unitless)
+    timesteps: number of simulation timesteps until last arrival occurs
     numreq: number of requests
     returns: workload structure
         # Workload is a list of tuples
         # Each list element corresponds to one request arrival:
         # (time of arrival, arriving at switch, size, duration)
     """
-    workload = []
-    for switch in switches:
-        i = 0
-        while i < workload_duration:
-            i += random.expovariate(interarrival_alpha)
-            duration = int(random.weibullvariate(duration_alpha,1))+1
-            size = 1
-            workload.append((i, switch, size, duration))
+    try:
+        f = open(filename, 'r')
+        workload = json.loads("".join(f.readlines()).strip())
+        f.close()
+        logging.info("Read workload from file: %s", filename)
         
-    workload = sorted(workload, key=lambda req: req[0]) 
-    return workload
+        return workload
+
+    except:
+        workload = []
+        for switch in switches:
+            i = 0
+            while i < timesteps:
+                i += random.expovariate(interarrival_alpha)
+                duration = int(random.weibullvariate(duration_shape,1))+1
+                size = 1
+                workload.append((i, switch, size, duration))
+            
+        workload = sorted(workload, key=lambda req: req[0]) 
+
+        f = open(filename, 'w')
+        print >>f, json.dumps(workload,sort_keys=True, indent=4)
+        f.close()
+        logging.info("Created workload and wrote to file: %s", filename)
+
+        return workload
 
 def random_int_workload(sw, size, duration, numreqs):
     """
@@ -113,16 +129,21 @@ def generic_workload(switch_workload_fcns, size, duration, timesteps):
     return workload
 
 
-def sawtooth(t, period, offset, max_demand):
-    """Sawtooth: 0 to full to 0 with specified period"""
+def sawtooth(t, period, offset, max_demand, y_shift=0):
+    """Sawtooth: 0 to full to 0 with specified period
+    
+    y_shift: percentage of the max_demand to shift the entire workload up the
+    y-axis. E.g., With max_demand = 60 and y_shift 1/2 will shift the wave up
+    so that it oscillates between 90 and 30 demand units, instead of 60 and 0
+    """
     phase = (t + offset) % float(period)
     if phase < period / 2.0:
-        return phase / float(period / 2.0) * max_demand
+        return phase / float(period / 2.0) * max_demand + (y_shift * max_demand)
     else:
-        return (period - phase) / float(period / 2.0) * max_demand
+        return (period - phase) / float(period / 2.0) * max_demand + (y_shift * max_demand)
 
 
-def wave(t, period, offset, max_demand):
+def wave(t, period, offset, max_demand, y_shift=0):
     """Wave: 0 to full to 0 with specified period
 
     This is actually an inverted cosine, but staying consistent
@@ -130,16 +151,19 @@ def wave(t, period, offset, max_demand):
     equal to an inverted cosine.
 
     Offset is in the same units as period.
+    y_shift: percentage of the max_demand to shift the entire workload up the
+    y-axis. E.g., With max_demand = 60 and y_shift 1/2 will shift the wave up
+    so that it oscillates between 90 and 30 demand units, instead of 60 and 0
     """
     phase_unitless = (t + offset - (period / 4.0)) % float(period)
     phase_radians = phase_unitless / float(period) * (2.0 * pi)
     raw_val = (sin(phase_radians) + 1.0) / 2.0
-    return raw_val * max_demand
+    return (raw_val * max_demand) + (y_shift * max_demand)
 
 
 
 def dual_offset_workload(switches, period, offset, max_demand, size,
-                        duration, timesteps, workload_fcn):
+                        duration, timesteps, workload_fcn, y_shift=0):
     """
     Return workload description with offset sawtooths.
 
@@ -150,6 +174,9 @@ def dual_offset_workload(switches, period, offset, max_demand, size,
     size: data demand (unitless)
     duration: length of each request (unitless)
     timesteps: number of timesteps
+    y_shift: percentage of the max_demand to shift the entire workload up the
+    y-axis. E.g., With max_demand = 60 and y_shift 1/2 will shift the wave up
+    so that it oscillates between 90 and 30 demand units, instead of 60 and 0
     workload_fcn: fcn like sawtooth or wave, w/these args:
         (t, period, offset, max_demand)
     returns: workload structure
@@ -160,8 +187,8 @@ def dual_offset_workload(switches, period, offset, max_demand, size,
     """
     assert len(switches) == 2
     switch_workload_fcns = {
-        switches[0]: lambda t: workload_fcn(t, period, 0, max_demand),
-        switches[1]: lambda t: workload_fcn(t, period, offset, max_demand)
+        switches[0]: lambda t: workload_fcn(t, period, 0, max_demand, y_shift),
+        switches[1]: lambda t: workload_fcn(t, period, offset, max_demand, y_shift)
     }
     return generic_workload(switch_workload_fcns, size, duration, timesteps)
 
