@@ -17,12 +17,26 @@ parser.add_argument('--demand', '-d',
                     help="max demand values",
                     action="store",
                     nargs='+',
+                    default=[32,64,128],
                     dest="demands")
 parser.add_argument('--staleness', '-s',
                     help="staleness values",
                     action="store",
                     nargs='+',
+                    default=[0],
                     dest="stalenesses")
+parser.add_argument('--timesteps', '-t',
+                    help="number of simulation timesteps",
+                    action="store",
+                    nargs='1',
+                    default=256,
+                    dest="timesteps")
+#parser.add_argument('--workloads', '-w',
+#                    help="workload function",
+#                    action="store",
+#                    nargs='+',
+#                    default=[expo_workload, dual_offset_workload]
+#                    dest="timesteps")
 args = parser.parse_args()
 
 
@@ -32,62 +46,42 @@ logging.config.fileConfig('setup.cfg')
 logger= logging.getLogger(__name__)
 
 def main():
-#    demo_strictly_local_ctrls()
-    for demand in [32,64,128]:
-        #for staleness in [0,1]:
-        for staleness in [0]:
-            sync_expo_improves_metric(max_demand=demand, staleness=staleness)
-            sync_expo_separate_improves_metric(max_demand=demand, staleness=staleness)
-            sync_separate_state_improves_metric(max_demand=demand, staleness=staleness)
+    timesteps = args.timesteps
+    for demand in args.demands:
+        for staleness in args.stalenesses:
             sync_improves_metric(max_demand=demand, staleness=staleness)
-        for greedylimit in [0,0.25,0.5,0.75,1]:
-            compare_greedy_dist_to_centralized(max_demand=demand, greedylimit=greedylimit)
+            sync_separate_improves_metric(max_demand=demand, staleness=staleness)
+            sync_expo_improves_metric(max_demand=demand, timesteps=timesteps, staleness=staleness)
+            sync_expo_separate_improves_metric(max_demand=demand, timesteps=timesteps, staleness=staleness)
+#        for greedylimit in [0,0.25,0.5,0.75,1]:
+#            compare_greedy_dist_to_centralized(max_demand=demand, greedylimit=greedylimit)
 #    synced_dist_equals_central()
 #    compare_random_dist_to_centralized()
-#    plot.plot_timeseries()
-#    plot.plot_boxplot()
+#    demo_strictly_local_ctrls()
 
-def demo_strictly_local_ctrls(max_demand=8, show_graph=False):
-    """Demonstrate synchronization across domains makes no difference when
-    LinkBalanerCtrl only handles requests within its own domain"""
 
-    #TODO: demonstrate with more than 1 srv per controller domain
-    period = 32
-    timesteps = period * 4
-    for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
-        myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
-        logger.info("starting %s", myname)
-        workload = dual_offset_workload(switches=['sw1', 'sw2'],
-                                        period=period, offset=period/2.0,
-                                        max_demand=max_demand, size=1,
-                                        duration=1, timesteps=timesteps,
-                                        workload_fcn=wave)
-
-        ctrls = strictly_local_ctrls()
-        sim = LinkBalancerSim(two_switch_topo(), ctrls)
-        sim.run_and_trace(myname, workload, old=True, sync_period=sync_period,
-                          show_graph=show_graph)
-        logger.info("ending %s", myname)
-
-def sync_improves_metric(period=64, max_demand=200, show_graph=False,
-                         staleness=0):
+def sync_improves_metric(max_demand, period=64, name=None, show_graph=False, staleness=0):
     """Evalute the value of synchronization for a LinkBalanerCtrl by showing
     its effect on performance metric. We expect that for a workload which
     imparts server link imbalance across multiple domains, syncing will help
     improve the rmse_server metric."""
 
+    if name == None:
+        name = sys._getframe().f_code.co_name
+
     timesteps = period * 4
     for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
-        myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
-                                                     "demand": max_demand,
-                                                     "num": sync_period,
-                                                     "staleness": staleness}
+        myname = '%(a)s_%(b)d_%(c)02d_%(d)d' % {"a": name,
+                                                "b": max_demand,
+                                                "c": sync_period,
+                                                "d": staleness}
+
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                         period=period, offset=period/2.0,
                                         max_demand=max_demand, size=1,
-                                    duration=2, timesteps=timesteps,
-                                    workload_fcn=wave)
+                                        duration=2, timesteps=timesteps,
+                                        workload_fcn=wave, y_shift=(1.0/3))
 
         ctrls = two_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
@@ -95,11 +89,9 @@ def sync_improves_metric(period=64, max_demand=200, show_graph=False,
                           show_graph=show_graph, staleness=staleness)
         logger.info("ending %s", myname)
 
-def sync_expo_improves_metric(max_demand, timesteps=64, show_graph=False, staleness=0):
-    """Evalute the value of synchronization for a LinkBalanerCtrl by showing
-    its effect on performance metric. We expect that for a workload which
-    imparts server link imbalance across multiple domains, syncing will help
-    improve the rmse_server metric."""
+def sync_expo_improves_metric(max_demand, timesteps, ia=10, shape=5, show_graph=False, staleness=0):
+    """ Same as sync_improves_metric, but using an exponential inter-arrival
+    distribution workload """
 
     for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
         myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
@@ -107,8 +99,8 @@ def sync_expo_improves_metric(max_demand, timesteps=64, show_graph=False, stalen
                                                      "num": sync_period,
                                                      "staleness": staleness}
         logger.info("starting %s", myname)
-        workload = expo_workload(switches=['sw1', 'sw2'],
-                workload_duration=timesteps)
+        workload = expo_workload(switches=['sw1', 'sw2'], interarrival_alpha=ia,
+                duration_shape=shape, timesteps=timesteps)
                 
         ctrls = two_ctrls()
         #ctrls = two_separate_state_ctrls()
@@ -117,51 +109,29 @@ def sync_expo_improves_metric(max_demand, timesteps=64, show_graph=False, stalen
                           show_graph=show_graph, staleness=staleness)
         logger.info("ending %s", myname)
 
-def sync_expo_separate_improves_metric(max_demand, timesteps=64, show_graph=False, staleness=0):
-    """Evalute the value of synchronization for a LinkBalanerCtrl by showing
-    its effect on performance metric. We expect that for a workload which
-    imparts server link imbalance across multiple domains, syncing will help
-    improve the rmse_server metric."""
 
-    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
-        myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
-                                                     "demand": max_demand,
-                                                     "num": sync_period,
-                                                     "staleness": staleness}
-        logger.info("starting %s", myname)
-        workload = expo_workload(switches=['sw1', 'sw2'],
-                workload_duration=timesteps)
-                
-        #ctrls = two_ctrls()
-        ctrls = two_separate_state_ctrls()
-        sim = LinkBalancerSim(two_switch_topo(), ctrls)
-        sim.run_and_trace(myname, workload, old=False, sync_period=sync_period,
-                          show_graph=show_graph, staleness=staleness)
-        logger.info("ending %s", myname)
-
-
-
-
-def sync_separate_state_improves_metric(period=64, max_demand=200, show_graph=False,
-                         staleness=0):
-    """
-    Same as above, except using separate state tracking controllers which keep
+def sync_separate_improves_metric(max_demand, period=64, name=None, show_graph=False, staleness=0):
+    """ Same as above, except using separate state tracking controllers which keep
     synchronization-shared state from extra-domain links sepatate from
-    locally-originating inferred "contributed" extra-domain link utilization
-    """
+    locally-originating inferred "contributed" extra-domain link utilization """
+
+    if name == None:
+        name = sys._getframe().f_code.co_name
 
     timesteps = period * 4
     for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
-        myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
-                                                     "demand": max_demand,
-                                                     "num": sync_period,
-                                                     "staleness": staleness}
+        myname = '%(a)s_%(b)d_%(c)02d_%(d)d' % {"a": name,
+                                                "b": max_demand,
+                                                "c": sync_period,
+                                                "d": staleness}
+
+        
         logger.info("starting %s", myname)
         workload = dual_offset_workload(switches=['sw1', 'sw2'],
                                         period=period, offset=period/2.0,
                                         max_demand=max_demand, size=1,
-                                    duration=2, timesteps=timesteps,
-                                    workload_fcn=wave)
+                                        duration=2, timesteps=timesteps,
+                                        workload_fcn=wave, y_shift=(1.0/3))
 
         ctrls = two_separate_state_ctrls()
         sim = LinkBalancerSim(two_switch_topo(), ctrls)
@@ -170,7 +140,25 @@ def sync_separate_state_improves_metric(period=64, max_demand=200, show_graph=Fa
         logger.info("ending %s", myname)
 
 
+def sync_expo_separate_improves_metric(max_demand, timesteps, ia=10, shape=5, show_graph=False, staleness=0):
+    """ """
 
+    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
+        myname = '%(fname)s_%(demand)d_%(num)02d_%(staleness)d' % {"fname": sys._getframe().f_code.co_name,
+                                                     "demand": max_demand,
+                                                     "num": sync_period,
+                                                     "staleness": staleness}
+        logger.info("starting %s", myname)
+        workload = expo_workload(switches=['sw1', 'sw2'], interarrival_alpha=ia,
+                duration_shape=shape, timesteps=timesteps)
+                
+        ctrls = two_separate_state_ctrls()
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        sim.run_and_trace(myname, workload, old=False, sync_period=sync_period,
+                          show_graph=show_graph, staleness=staleness)
+        logger.info("ending %s", myname)
+
+#######################################
 
 def synced_dist_equals_central(period=64, max_demand=4, show_graph=False):
     """Ensure that a distributed controller simulation run with sync_period=0
@@ -246,6 +234,28 @@ def compare_greedy_dist_to_sync_dist(max_demand=8, show_graph=False):
     algorithm in a dynamic, discrete loadbalancing environment"""
     pass
 
+
+def demo_strictly_local_ctrls(max_demand=8, show_graph=False):
+    """Demonstrate synchronization across domains makes no difference when
+    LinkBalanerCtrl only handles requests within its own domain"""
+
+    #TODO: demonstrate with more than 1 srv per controller domain
+    period = 32
+    timesteps = period * 4
+    for sync_period in [0] + [2**x for x in range(0, int(log(period,2)))]:
+        myname = '%(fname)s_%(num)02d' % {"fname": sys._getframe().f_code.co_name, "num": sync_period}
+        logger.info("starting %s", myname)
+        workload = dual_offset_workload(switches=['sw1', 'sw2'],
+                                        period=period, offset=period/2.0,
+                                        max_demand=max_demand, size=1,
+                                        duration=1, timesteps=timesteps,
+                                        workload_fcn=wave)
+
+        ctrls = strictly_local_ctrls()
+        sim = LinkBalancerSim(two_switch_topo(), ctrls)
+        sim.run_and_trace(myname, workload, old=True, sync_period=sync_period,
+                          show_graph=show_graph)
+        logger.info("ending %s", myname)
 
 
 #Not enough brainpower left tonight to implement these, but I have been
