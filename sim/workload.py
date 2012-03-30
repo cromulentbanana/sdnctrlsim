@@ -31,7 +31,7 @@ def unit_workload(sw, size, duration, numreqs):
     return workload
 
 def expo_workload(switches, timesteps, interarrival_alpha, duration_shape, filename='expo.workload'):
-    """ Exponentially distributed inter-arrival time with weibull demand distribution
+    """ Exponentially distributed inter-arrival times with weibull duration distribution
 
     sw: list of switch names
     max_demand: link utilization (unitless)
@@ -39,9 +39,7 @@ def expo_workload(switches, timesteps, interarrival_alpha, duration_shape, filen
     timesteps: number of simulation timesteps until last arrival occurs
     numreq: number of requests
     returns: workload structure
-        # Workload is a list of tuples
-        # Each list element corresponds to one request arrival:
-        # (time of arrival, arriving at switch, size, duration)
+        (time of arrival, arriving at switch, size, duration)
     """
     try:
         f = open(filename, 'r')
@@ -53,13 +51,20 @@ def expo_workload(switches, timesteps, interarrival_alpha, duration_shape, filen
 
     except:
         workload = []
-        for switch in switches:
-            i = 0
-            while i < timesteps:
-                i += random.expovariate(interarrival_alpha)
+        for i, switch in enumerate(switches):
+            time = 0
+            while time < timesteps:
+                if i == 0:
+                    time += random.expovariate(interarrival_alpha) 
+                    time += ((time/timesteps) * 0.2)
+                if i == 1:
+                    time += random.expovariate(interarrival_alpha) 
+                    time += ((1 - time/timesteps) * 0.2)
+                else:
+                    time += random.expovariate(interarrival_alpha)
                 duration = int(random.weibullvariate(duration_shape,1))+1
                 size = 1
-                workload.append((i, switch, size, duration))
+                workload.append((time, switch, size, duration))
             
         workload = sorted(workload, key=lambda req: req[0]) 
 
@@ -199,9 +204,10 @@ def old_to_new(workload):
     """
     new_workload = []
     for i, reqs in enumerate(workload):
-        for req in reqs:
+        for j, req in enumerate(reqs):
+            frac = ((j+1) * 0.5)/len(reqs) 
             assert len(req) == 3
-            new_workload.append((i, req[0], req[1], req[2]))
+            new_workload.append((i+frac, req[0], req[1], req[2]))
     return new_workload
 
 

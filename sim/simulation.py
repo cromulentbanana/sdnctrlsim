@@ -289,6 +289,7 @@ class LinkBalancerSim(Simulation):
 
                 # Free all resources that ended before or at arr_time
                 self.free_resources(arr_time)
+                logging.debug("Freed! " + str(self.graph.edges(data=True)))
                 # Let every controller learn its state from the topology
                 if staleness > 0: 
                     if staleness < arr_time:

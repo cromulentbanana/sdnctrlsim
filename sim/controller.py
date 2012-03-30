@@ -352,7 +352,7 @@ class SeparateStateLinkBalancerCtrl(LinkBalancerCtrl):
         logging.debug("%s syncs toward %s" % (self.name, dstctrl.name))
 
 
-    def compute_path_metric(self, sw, path, util, time_now):
+    def compute_path_metric(self, sw, path, util, time_now, local_contrib):
         """
         Return a pathmetric rating the utilization of the path pathmetric is a
         real number in [0,1] which is the max (worst) of all linkmetrics for all
@@ -365,18 +365,18 @@ class SeparateStateLinkBalancerCtrl(LinkBalancerCtrl):
         for link in links:
             u, v = link
             # Use the last-learned-via-sync value for a link
-            if 'sync_learned' in self.graph[u][v]:
+            if (not local_contrib) and 'sync_learned' in self.graph[u][v]:
                 used1 = self.graph[u][v]['sync_learned'] + util
                 used2 = self.graph[u][v]['used'] + util
                 # ['used'] is a strict lower bound for ['sync_learned']
                 if used1 > used2: 
                     used = used1
-                    logging.debug("[%s] using sync_learned value 1 [%f]", str(self.name), used1)
+                    logging.debug("CS [%s] using sync_learned value 1 [%f]", str(self.name), used1)
                 else:
                     used = used2
-                    logging.debug("[%s] using sync_learned value 2 [%f]", str(self.name), used2)
+                    logging.debug("CS [%s] using sync_learned value 2 [%f]", str(self.name), used2)
             else:
-                logging.debug("[%s] using tracking value", str(self.name))
+                logging.debug("CS [%s] using tracking value", str(self.name))
                 used = self.graph[u][v]['used'] + util
 
             capacity = self.graph[u][v]['capacity']
@@ -397,67 +397,111 @@ class SeparateStateLinkBalancerCtrl(LinkBalancerCtrl):
                      str((path, linkmetrics)))
         return (pathmetric, len(links))
 
+
+    def calculate_what_to_shift(self, paths, sw):
+        """
+        Calculate the current ratio of max(sync_learned, my contributed)
+        utilization across two paths corresponds to figure 1 in drawing
+        """
+
+        pathmetrics = {}
+        for path in paths:
+            metric, length = self.compute_path_metric(sw, path, 0, 0, local_contrib=False)
+            assert metric >= 0 
+            pathmetrics[metric] = path
+
+        metrics = pathmetrics.keys() 
+        logging.debug("SS CWTS PATH METRICS:, %s", str(pathmetrics))
+        balanced_metric = sum(metrics)/len(metrics)
+        if max(metrics) == 0:
+            logging.debug("SS CWTS MAX METRIC is 0")
+            shift_by = 0
+            shift_from_path = None
+        else:
+            logging.debug("SS max(metrics) is %s", str(max(metrics)))
+            logging.debug("SS balanced metrics is %s", str(balanced_metric))
+            shift_by = (max(metrics) - balanced_metric)/max(metrics)
+            shift_from_path = pathmetrics[max(metrics)]
+
+        logging.debug("SS CWTS SHIFT FROM: %s", str(shift_from_path))
+        logging.debug("SS CWTS SHIFT BY: %s", str(shift_by))
+        return(shift_from_path, shift_by)
+
+
     def find_best_path(self, paths, sw, util, duration, time_now):
+        """
+        Calculate the current ratio of my contributed utilization across two paths
+        corresponds to figure 1 in drawing
+        """
         bestpath = None
         bestpathmetric = None # [0,1] lower means better path
         bestpathlen = None # lower -> better path
         candidatepaths = []
         
-        # DEBUGGING FOR ANJA
-        edges = self.graph.edges(data=True)
-        myedges = [ (a+"-"+b,c['capacity'],c['used'],c.get('sync_learned', '')) for a,b,c in edges ]
-        myedges2 = [ (a+"-"+b,c['used']/c['capacity'],c.get('sync_learned',-1)/c['capacity']) for a,b,c in edges ]
+        assert len(paths) == 2
         
-        #logging.debug("ANJA : %s\nANJA", str(self.graph.edges(data=True)))
-        logging.debug("ANJA: %s", str(myedges))
-        logging.debug("ANJA: %s", str(myedges2))
-        # DEBUGGING FOR ANJA
+        path_to_shift, shift_by = self.calculate_what_to_shift(paths, sw)
 
-
+        pathmetrics = {}
+        paths_by_length = {}
+        metrics = []
+        metricpaths = {}
         for path in paths:
-            pathmetric, pathlen = self.compute_path_metric(sw, path, util, time_now)
-            candidatepaths.append((pathmetric, pathlen, path))
+            metric, length = self.compute_path_metric(sw, path, 0, 0, local_contrib=True)
+            paths_by_length[length] = path
+            metrics.append(metric)
+            assert metric >= 0 
+            pathmetrics[" ".join(path)] = metric
+            metricpaths[metric] = path
+
+        logging.debug("SS FBP PATH METRICS:, %s", str(metricpaths))
+        if path_to_shift == None:
+            # return shortest path
+            logging.debug("SS FBP Returning LOCAL: %s", str((paths_by_length[min(paths_by_length.keys())],0)))
+            return (paths_by_length[min(paths_by_length.keys())], 0)
        
-        logging.debug("ANJA pre-scaled PathMetrics: %s", str([ (a,c) for a,b,c in candidatepaths]))
-        # The pathmetrics for all n links should ideally be equal -- i.e. the
-        # average over all pathmetrics. (ideal-pathmetric) is the amount by
-        # which each pathmetric would need to change to balance the pathmetrics
-        # for all links. Alpha is a scaling factor to select
-        pathmetricsum = sum([k for k, l, m in candidatepaths])
-        ideal = pathmetricsum * 1.0 / len(candidatepaths)
-        scaledpaths = [] # used to keep log output for ANJA
-        for pathmetric, pathlen, path in candidatepaths:
-            scaledpathmetric = pathmetric + ((ideal - pathmetric) * self.alpha)
-            logging.debug("Find Best Path scaled: %s", str((scaledpathmetric, pathlen)))
-            scaledpaths.append((scaledpathmetric, path)) # used to keep output for ANJA
         
+        path_to_shift_metric = pathmetrics.pop(" ".join(path_to_shift))
+        path_to_receive_metric = pathmetrics.pop(pathmetrics.keys()[0])
+        logging.debug("SS FBP Path to Recv: %s", str(metricpaths[path_to_receive_metric]))
 
-            #DESIGN CHOICE: We pick the path with the best pathmetric.
-            # If multiple path metrics tie, we pick the path with the shortest
-            # length
-            if (bestpathmetric == None):
-                bestpath = path
-                bestpathmetric = scaledpathmetric
-                bestpathlen = pathlen
-            elif (scaledpathmetric < bestpathmetric):
-                bestpath = path
-                bestpathmetric = scaledpathmetric
-                bestpathlen = pathlen
-            elif (scaledpathmetric == bestpathmetric and pathlen < bestpathlen):
-                bestpath = path
-                bestpathmetric = scaledpathmetric
-                bestpathlen = pathlen
+        if (path_to_receive_metric == 0):
+            logging.debug("SS FBP EARLY Returning : %s", str((metricpaths[min(metrics)], 0)))
+            return (metricpaths[min(metrics)], 0)
+        else:
+            current_ratio = path_to_shift_metric * 1.0 / path_to_receive_metric
 
-        if (bestpath == None):
-            return None
+        logging.debug("SS FBP CURRENT RATIO: %s", str(current_ratio))
 
-        logging.debug("ANJA scaled PathMetrics: %s\nANJA", str([ (a,b) for a,b in scaledpaths]))
-        funname = sys._getframe().f_code.co_name
-        logging.debug("[%s] [%s] [%s] [%s] [%s] [%s]", 
-                     funname, str(time_now), str(self), str(bestpath),
-                     str(bestpathlen), str(bestpathmetric))
 
-        return (bestpath, bestpathmetric)
+        goal_path_to_shift_metric = path_to_shift_metric * (1 - (shift_by * self.alpha))
+        goal_path_to_receive_metric = path_to_receive_metric + (path_to_shift_metric * (shift_by * self.alpha))
+
+        if (goal_path_to_receive_metric == 0):
+            # large number for practical purposes
+            goal_ratio = 100000
+        else:
+            goal_ratio = goal_path_to_shift_metric * 1.0 / goal_path_to_receive_metric
+
+        logging.debug("SS FBP GOAL RATIO: %s", str(goal_ratio))
+
+        # FINALLY DECIDE WHICH PATH TO RETURN BASED ON GOAL-Current RATIO
+        if goal_ratio - current_ratio < 0:
+            # return path with lower utiliztion
+            logging.debug("SS FBP LOWER Returning : %s", str((metricpaths[min(metrics)], 0)))
+            return (metricpaths[min(metrics)], 0)
+    
+        if goal_ratio - current_ratio > 0:
+            # return path with higher utilization
+            logging.debug("SS FBP HIGHER Returning : %s", str((metricpaths[max(metrics)], 0)))
+            return (metricpaths[max(metrics)], 0)
+
+        if goal_ratio - current_ratio == 0:
+            # return shortest path
+            logging.debug("SS FBP Returning LOCAL: %s",
+                    str((paths_by_length[min(paths_by_length.keys())], 0)))
+            return (paths_by_length[min(paths_by_length.keys())], 0)
+
 
 
 class RandomChoiceCtrl(LinkBalancerCtrl):
