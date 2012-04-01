@@ -62,7 +62,9 @@ def expo_workload(switches, timesteps, interarrival_alpha, duration_shape, filen
                     time += ((1 - time/timesteps) * 0.2)
                 else:
                     time += random.expovariate(interarrival_alpha)
-                duration = int(random.weibullvariate(duration_shape,1))+1
+                # random.weibullvariate(alpha, beta)
+                # alpha is the scale parameter and beta is shape.
+                duration = int((random.weibullvariate(1, duration_shape)+2))
                 size = 1
                 workload.append((time, switch, size, duration))
             
@@ -197,7 +199,7 @@ def dual_offset_workload(switches, period, offset, max_demand, size,
     }
     return generic_workload(switch_workload_fcns, size, duration, timesteps)
 
-def old_to_new(workload):
+def old_to_new(workload, strictly_increasing_time=True):
     """ 
     Convert the old-style 2-level-lists of requests to list of timestamped
     requests 
@@ -205,7 +207,10 @@ def old_to_new(workload):
     new_workload = []
     for i, reqs in enumerate(workload):
         for j, req in enumerate(reqs):
-            frac = ((j+1) * 0.5)/len(reqs) 
+            if (strictly_increasing_time):
+                frac = ((j+1) * 0.5)/len(reqs) 
+            else:
+                frac = 0
             assert len(req) == 3
             new_workload.append((i+frac, req[0], req[1], req[2]))
     return new_workload
