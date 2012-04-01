@@ -25,6 +25,12 @@ parser.add_argument('--staleness', '-s',
                     nargs='+',
                     default=[0,1],
                     dest="stalenesses")
+parser.add_argument('--syncperiods', '-p',
+                    help="staleness values",
+                    action="store",
+                    nargs='+',
+                    default=[0,1,2,4,8,16],
+                    dest="syncperiods")
 parser.add_argument('--timesteps', '-t',
                     help="number of simulation timesteps",
                     action="store",
@@ -46,15 +52,16 @@ logging.config.fileConfig('setup.cfg')
 logger= logging.getLogger(__name__)
 
 def main():
+    sp = args.syncperiods
     timesteps = args.timesteps
     for demand in args.demands:
         demand = int(demand)
         for staleness in args.stalenesses:
-            staleness = int(staleness)
-            sync_improves_metric(max_demand=demand, timesteps=timesteps, workload_name='expo', ctrl_name='lbc', staleness=staleness)
-            sync_improves_metric(max_demand=demand, timesteps=timesteps, workload_name='expo', ctrl_name='separate', staleness=staleness)
-            sync_improves_metric(max_demand=demand, timesteps=timesteps, workload_name='wave', ctrl_name='lbc', staleness=staleness)
-            sync_improves_metric(max_demand=demand, timesteps=timesteps, workload_name='wave', ctrl_name='separate', staleness=staleness)
+            staleness = float(staleness)
+            sync_improves_metric(max_demand=demand, sync_periods=sp, timesteps=timesteps, workload_name='expo', ctrl_name='lbc', staleness=staleness)
+            sync_improves_metric(max_demand=demand, sync_periods=sp, timesteps=timesteps, workload_name='expo', ctrl_name='separate', staleness=staleness)
+            sync_improves_metric(max_demand=demand, sync_periods=sp, timesteps=timesteps, workload_name='wave', ctrl_name='lbc', staleness=staleness)
+            sync_improves_metric(max_demand=demand, sync_periods=sp, timesteps=timesteps, workload_name='wave', ctrl_name='separate', staleness=staleness)
 #        for greedylimit in [0,0.25,0.5,0.75,1]:
 #            compare_greedy_dist_to_centralized(max_demand=demand, greedylimit=greedylimit)
 #    synced_dist_equals_central()
@@ -62,7 +69,8 @@ def main():
 #    demo_strictly_local_ctrls()
 
 
-def sync_improves_metric(max_demand, timesteps, workload_name, ctrl_name, name=None, ia=10, shape=5, show_graph=False, staleness=0):
+def sync_improves_metric(max_demand, sync_periods, timesteps, workload_name,
+        ctrl_name, name=None, ia=10, shape=0.3, show_graph=False, staleness=0):
     """Evalute the value of synchronization for a LinkBalanerCtrl by showing
     its effect on performance metric. We expect that for a workload which
     imparts server link imbalance across multiple domains, syncing will help
@@ -71,8 +79,11 @@ def sync_improves_metric(max_demand, timesteps, workload_name, ctrl_name, name=N
     if name == None:
         name = sys._getframe().f_code.co_name + "_" + ctrl_name + "_" + workload_name
 
-    for sync_period in [0] + [2**x for x in range(0, int(log(timesteps,2)))]:
-        myname = '%(a)s_%(b)d_%(c)02d_%(d)0.0f' % {"a": name,
+    #for sync_period in [0] + [2**(x) for x in range(0, int(log(timesteps,2)))]:
+    for sync_period in sync_periods:
+
+        sync_period = float(sync_period)
+        myname = '%(a)s_%(b)d_%(c)02d_%(d)01d' % {"a": name,
                                                "b": max_demand,
                                                "c": sync_period,
                                                "d": staleness}
