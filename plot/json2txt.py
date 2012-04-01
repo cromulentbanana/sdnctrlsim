@@ -11,6 +11,12 @@ import argparse
 import json
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--verbose', '-v',
+                    help="verbose",
+                    action="store",
+                    default="False",
+                    nargs='store_true',
+                    dest="verbose")
 parser.add_argument('--files', '-f',
                     help="input files",
                     action="store",
@@ -21,6 +27,11 @@ parser.add_argument('--rmse_server', '-r',
                     action="store_true",
                     default=False,
                     dest="rmse")
+parser.add_argument('--nib-dist', '-n',
+                    help="ouput nib-nib distance metrics",
+                    action="store_true",
+                    default=False,
+                    dest="nibdist")
 parser.add_argument('--pnview', '-p',
                     help="ouput pn_view",
                     action="store_true",
@@ -43,6 +54,9 @@ def main():
         convert_rmse_to_columns(metrics)
     if args.pnview:
         convert_pnview_to_columns(metrics)
+    if args.nibdist:
+        convert_nib_dist_to_columns(metrics)
+
 
 
 def convert_rmse_to_columns(metrics):
@@ -55,7 +69,26 @@ def convert_rmse_to_columns(metrics):
     for filename, m in metrics:
         newarr = [filename]
         newarr.extend(m["rmse_servers"])
-        print len(newarr)
+        columns.append(newarr)
+
+    rows = zip(*columns)
+
+    for i, row in enumerate(rows):
+        if i == 0:
+            print "#" + " ".join([str(r) for r in row])
+        else:
+            print " ".join([str(r) for r in row])
+
+def convert_nib_dist_to_columns(metrics):
+    """
+    Column format:
+    nib_dist1 nib_dist2...
+    """
+    
+    columns = []
+    for filename, m in metrics:
+        newarr = [filename]
+        newarr.extend([a for (a,b,c) in m["state_distances"]])
         columns.append(newarr)
 
     rows = zip(*columns)
