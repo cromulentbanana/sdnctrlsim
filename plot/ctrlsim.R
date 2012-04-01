@@ -1,6 +1,7 @@
 plot.single.file <- function(
-	#dir="/home/dlevin/Desktop/logs/Rdata/", 
-	dir = "//mnt/raid5_data/stanford-ofnet/virtpyenv/logs/",
+	dir=".",
+	#dir="/home/dlevin/Documents/sdnctrlsim/logs/", 
+	#dir = "//mnt/raid5_data/stanford-ofnet/virtpyenv/logs/",
 	#file="anja_rmse_sync_improves_metric_lbc_wave_32_0.txt",
 	file,
 	do.ps=0, psdir="/tmp/", psbase="", m.max=1000, n=4, do.boxplot=0, do.ts=1)
@@ -10,7 +11,6 @@ plot.single.file <- function(
   cat("reading", filename, "\n")
   data <- read.file(filename, n)
 
-
   if(do.ts) {
     if(do.ps) {
       psname <- paste(psdir, psbase, file, "_ts.ps", sep = "")
@@ -18,14 +18,16 @@ plot.single.file <- function(
     }
 #    xrange <- c(1,length(data[,1]))
 #    yrange <- range(data)
+# TODO: Make the start:end values parameters
     xrange <- c(1,length(data[,1][112:147]))
     yrange <- range(data)
     plot(xrange, yrange, xlab = "Simulation Time", 
-      	ylab = "Link Utilization", type = "n",
+      	ylab = "% Link Utilization", type = "n",
       	cex = 2, cex.axis = 2, cex.lab = 2)
-    leg = paste("entry", 1:n)
+    leg = paste("Link ", 1:n)
     do.col <- c(1:n, 1:n)
-    #legend(xrange[1], yrange[2], col = do.col[1:n], legend = leg, bty = "n", lty = rep(1, n), cex = 1.3)
+    #legend(x=1,y=0.33, xrange[1], yrange[2], col = do.col[1:n], pch=c(1:n), legend = leg, bty = "n", lty = rep(1, n), cex = 1.5)
+    legend(x=2,y=0.33, col = do.col[1:n], pch=c(1:n), legend = leg, bty = "n", lty = rep(1, n), cex = 1.5)
     for(i in 1:n) {
       points(data[, i][112:147], col = do.col[i], pch = i, cex = 2)
       lines(data[, i][112:147], col = do.col[i], pch = i, cex = 2)
@@ -47,7 +49,7 @@ plot.single.file <- function(
 
     box.cutoff <- length(data[,1])
     box.yrange <- range(data[16:box.cutoff,])
-    boxplot(data[16:box.cutoff,], ylim = box.yrange)
+    boxplot(data[16:box.cutoff,], ylim = box.yrange, xlab="NOS Sync Period (Simulation Timesteps)", ylab="Server Link RMSE", cex=2, cex.axis=2, cex.lab=2)
     #title(file)
 
     if(do.ps) {
