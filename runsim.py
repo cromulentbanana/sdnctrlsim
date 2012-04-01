@@ -34,7 +34,7 @@ parser.add_argument('--syncperiods', '-p',
 parser.add_argument('--timesteps', '-t',
                     help="number of simulation timesteps",
                     action="store",
-                    nargs='1',
+                    nargs=1,
                     default=256,
                     dest="timesteps")
 #parser.add_argument('--workloads', '-w',
