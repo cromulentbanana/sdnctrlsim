@@ -13,7 +13,7 @@ plot.single.file <- function(
 
   if(do.ts) {
     if(do.ps) {
-      psname <- paste(psdir, psbase, file, ".ts.ps", sep = "")
+      psname <- paste(psdir, psbase, file, "_ts.ps", sep = "")
       ps.init(psname)
     }
 #    xrange <- c(1,length(data[,1]))
@@ -41,7 +41,7 @@ plot.single.file <- function(
 
   if (do.boxplot) {
 	  if(do.ps) {
-		psname <- paste(psdir, psbase, file, ".boxplot.ps", sep = "")
+		psname <- paste(psdir, psbase, file, "_boxplot.ps", sep = "")
 		ps.init(psname)
 	  }
 
