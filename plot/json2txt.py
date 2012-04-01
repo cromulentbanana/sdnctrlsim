@@ -13,9 +13,8 @@ import json
 parser = argparse.ArgumentParser()
 parser.add_argument('--verbose', '-v',
                     help="verbose",
-                    action="store",
+                    action="store_true",
                     default="False",
-                    nargs='store_true',
                     dest="verbose")
 parser.add_argument('--files', '-f',
                     help="input files",
