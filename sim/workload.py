@@ -30,7 +30,7 @@ def unit_workload(sw, size, duration, numreqs):
 
     return workload
 
-def expo_workload(switches, timesteps, interarrival_alpha, duration_shape, filename='expo.workload'):
+def expo_workload(switches, period, timesteps, interarrival_alpha, duration_shape, filename='expo.workload'):
     """ Exponentially distributed inter-arrival times with weibull duration distribution
 
     sw: list of switch names
@@ -55,16 +55,26 @@ def expo_workload(switches, timesteps, interarrival_alpha, duration_shape, filen
             time = 0
             while time < timesteps:
                 if i == 0:
-                    time += random.expovariate(interarrival_alpha) 
-                    time += ((time/timesteps) * 0.2)
-                if i == 1:
-                    time += random.expovariate(interarrival_alpha) 
-                    time += ((1 - time/timesteps) * 0.2)
+                    #time += random.expovariate(interarrival_alpha + (interarrival_alpha/2 * (time / timesteps)))
+                    time += random.expovariate(interarrival_alpha/3 +
+                                               (3* interarrival_alpha *
+                                                (wave(time,period,period/2,10)/10)/3)
+                                               )
+                    duration = int((random.weibullvariate(1, duration_shape)+1))
+#                   print 10 + 10* (i*1.0/100)
+                elif i == 1:
+                    #time += random.expovariate(interarrival_alpha + interarrival_alpha/2 * (1 - (time / timesteps)))
+                    time += random.expovariate(interarrival_alpha/3 +
+                                               (3*interarrival_alpha *
+                                                (wave(time,period,0,10)/10)/3)
+                                               )
+#                    print 10 + 10* (1-(i*1.0/100))
+                    duration = int((random.weibullvariate(1, duration_shape)+1))
                 else:
+                    assert False
                     time += random.expovariate(interarrival_alpha)
                 # random.weibullvariate(alpha, beta)
                 # alpha is the scale parameter and beta is shape.
-                duration = int((random.weibullvariate(1, duration_shape)+2))
                 size = 1
                 workload.append((time, switch, size, duration))
             

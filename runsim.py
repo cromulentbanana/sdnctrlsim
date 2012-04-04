@@ -34,10 +34,18 @@ parser.add_argument('--syncperiods', '-p',
 parser.add_argument('--timesteps', '-t',
                     help="number of simulation timesteps",
                     action="store",
-                    nargs=1,
+                    type=int,
                     default=256,
                     dest="timesteps")
+parser.add_argument('--alpha-sslbc', '-a',
+                    help="sslbc alpha parameter",
+                    action="store",
+                    type=float,
+                    default=0.3,
+                    dest="sslbc_alpha")
+
 #parser.add_argument('--workloads', '-w',
+
 #                    help="workload function",
 #                    action="store",
 #                    nargs='+',
@@ -54,14 +62,18 @@ logger= logging.getLogger(__name__)
 def main():
     sp = args.syncperiods
     timesteps = args.timesteps
+    sa = float(args.sslbc_alpha)
+    print "Timesteps = %d" % (timesteps)
+    print "Sync Periods = %s" % (str(sp))
+    print "SSLBC Alpha = %f\n" % (sa)
     for demand in args.demands:
         demand = int(demand)
         for staleness in args.stalenesses:
             staleness = float(staleness)
-            sync_improves_metric(max_demand=demand, sync_periods=sp, timesteps=timesteps, workload_name='expo', ctrl_name='lbc', staleness=staleness)
-            sync_improves_metric(max_demand=demand, sync_periods=sp, timesteps=timesteps, workload_name='expo', ctrl_name='separate', staleness=staleness)
-            sync_improves_metric(max_demand=demand, sync_periods=sp, timesteps=timesteps, workload_name='wave', ctrl_name='lbc', staleness=staleness)
-            sync_improves_metric(max_demand=demand, sync_periods=sp, timesteps=timesteps, workload_name='wave', ctrl_name='separate', staleness=staleness)
+            sync_improves_metric(max_demand=demand, sa=sa, sync_periods=sp, timesteps=timesteps, workload_name='expo', ctrl_name='separate', staleness=staleness)
+            sync_improves_metric(max_demand=demand, sa=sa, sync_periods=sp, timesteps=timesteps, workload_name='expo', ctrl_name='lbc', staleness=staleness)
+            sync_improves_metric(max_demand=demand, sa=sa, sync_periods=sp, timesteps=timesteps, workload_name='wave', ctrl_name='lbc', staleness=staleness)
+            sync_improves_metric(max_demand=demand, sa=sa, sync_periods=sp, timesteps=timesteps, workload_name='wave', ctrl_name='separate', staleness=staleness)
 #        for greedylimit in [0,0.25,0.5,0.75,1]:
 #            compare_greedy_dist_to_centralized(max_demand=demand, greedylimit=greedylimit)
 #    synced_dist_equals_central()
@@ -70,11 +82,21 @@ def main():
 
 
 def sync_improves_metric(max_demand, sync_periods, timesteps, workload_name,
-        ctrl_name, name=None, ia=10, shape=0.3, show_graph=False, staleness=0):
+        ctrl_name, name=None, sa=0.3, ia=10, shape=0.4,  show_graph=False, staleness=0):
     """Evalute the value of synchronization for a LinkBalanerCtrl by showing
     its effect on performance metric. We expect that for a workload which
     imparts server link imbalance across multiple domains, syncing will help
-    improve the rmse_server metric."""
+    improve the rmse_server metric.
+    
+    sa: the sslbc fractional load-balancing scale factor (0,1]. Controls what
+    fraction of the imbalance we re-balance at each handle_request
+
+    ia: the mean parameter for the expnentially distributed inter-arrival times
+    of the expo workflow (value of x leads to mean of 1/x). Gets passed to
+    random.expovariate(ia)
+
+    shape: the weibull distribution shape parameter for flow duration
+    """
 
     if name == None:
         name = sys._getframe().f_code.co_name + "_" + ctrl_name + "_" + workload_name
@@ -91,8 +113,10 @@ def sync_improves_metric(max_demand, sync_periods, timesteps, workload_name,
         logger.info("starting %s", myname)
 
         if workload_name == 'expo':
+            wave_period = timesteps/4
             old_style=False
-            workload = expo_workload(switches=['sw1', 'sw2'], interarrival_alpha=ia,
+            workload = expo_workload(switches=['sw1', 'sw2'],
+                                     period=wave_period, interarrival_alpha=ia,
                                      duration_shape=shape, timesteps=timesteps)
         elif workload_name == 'wave':
             old_style=True
@@ -106,7 +130,7 @@ def sync_improves_metric(max_demand, sync_periods, timesteps, workload_name,
             assert "No Valid Workload Specified"
 
         if ctrl_name == 'separate':
-            ctrls = two_separate_state_ctrls()
+            ctrls = two_separate_state_ctrls(alpha=sa)
         elif ctrl_name == 'lbc':
             ctrls = two_ctrls()
         else:

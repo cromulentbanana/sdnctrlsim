@@ -82,11 +82,11 @@ def two_ctrls():
     ctrls.append(c2)
     return ctrls
 
-def two_separate_state_ctrls():
+def two_separate_state_ctrls(alpha):
     """Return list of two different controllers."""
     ctrls = []
-    c1 = SeparateStateLinkBalancerCtrl(sw=['sw1'], srv=['s1', 's2'])
-    c2 = SeparateStateLinkBalancerCtrl(sw=['sw2'], srv=['s1', 's2'])
+    c1 = SeparateStateLinkBalancerCtrl(alpha=alpha, sw=['sw1'], srv=['s1', 's2'])
+    c2 = SeparateStateLinkBalancerCtrl(alpha=alpha, sw=['sw2'], srv=['s1', 's2'])
     ctrls.append(c1)
     ctrls.append(c2)
     return ctrls

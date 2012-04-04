@@ -325,7 +325,7 @@ class SeparateStateLinkBalancerCtrl(LinkBalancerCtrl):
     alpha: Scaling factor for redistributing the load across links between sync
     events
     """
-    def __init__(self, alpha=0.3, *args, **kwargs):
+    def __init__(self, alpha, *args, **kwargs):
         super(SeparateStateLinkBalancerCtrl, self).__init__(*args, **kwargs)
         self.alpha = alpha
 
