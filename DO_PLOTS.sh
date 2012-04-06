@@ -1,12 +1,8 @@
 #!/bin/bash
-set -e
+set -e 
 
 #Run the simulation for the evaluation cases we're currently using in our apper
-echo "Running the Simulation..."
-sleep 1
-./runsim.py -d 32 -s 0
-
-echo "Producing plots..."
+echo "Producing plots... Hope you already ran the simulation!"
 sleep 1
 cd logs
 
