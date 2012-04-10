@@ -82,7 +82,7 @@ def main():
 
 
 def sync_improves_metric(max_demand, sync_periods, timesteps, workload_name,
-        ctrl_name, name=None, sa=0.3, ia=10, shape=0.4,  show_graph=False, staleness=0):
+        ctrl_name, name=None, sa=0.3, ia=10, shape=0.5,  show_graph=False, staleness=0):
     """Evalute the value of synchronization for a LinkBalanerCtrl by showing
     its effect on performance metric. We expect that for a workload which
     imparts server link imbalance across multiple domains, syncing will help

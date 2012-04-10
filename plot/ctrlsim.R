@@ -52,9 +52,11 @@ plot.single.file <- function(
 	  }
 
     box.cutoff <- length(data[,1])
-    box.yrange <- range(data[16:box.cutoff,])
+    #box.yrange <- range(data[16:box.cutoff,])
+    box.yrange <- c(0,8)
 	box.names <- c(0, 2**c(0:4))
     boxplot(data[16:box.cutoff,], names=box.names, ylim = box.yrange, xlab="NOS Sync Period (Simulation Timesteps)", ylab="Server Link RMSE", cex=2, cex.axis=2, cex.lab=2)
+	abline(h=0.707, lty=2)
     #title(file)
 
     if(do.ps) {
